@@ -9,4 +9,6 @@
 - [Processing文字气泡抖动创作思路解析](https://mp.weixin.qq.com/s/S3KxWz-OE0Q_hoIL9AoD7g)
 - [设计师都开始内卷了 - 用Processing模拟视频号和Facebook新Logo](https://mp.weixin.qq.com/s/jxuqUSyDHWMGIm3ri4812g)
 - [老师，我再也不怕Processing动图啦 - 深度解析Processing图片序列帧动画](https://mp.weixin.qq.com/s/O1awDaha3M4SaEEBqJq0Yw)
-
+- [Processing中文社区：https://www.processing.love](https://mp.weixin.qq.com/s/f-v81a8jGYWAS059nqaH0g)
+- [从零入门Processing粒子系统](https://mp.weixin.qq.com/s/ExYbuaohlaktAqe7wKvIrA)
+- [做一名合格的 Processing 键盘侠](https://mp.weixin.qq.com/s/Niikkl1-D-XC3JPB40j9uQ)
