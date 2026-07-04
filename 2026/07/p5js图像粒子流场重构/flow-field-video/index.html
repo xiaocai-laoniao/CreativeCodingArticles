@@ -1,0 +1,718 @@
+<!doctype html>
+<html lang="zh-CN" data-resolution="landscape">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+
+      @font-face {
+        font-family: "PingFang SC";
+        src: local("PingFang SC");
+      }
+
+      @font-face {
+        font-family: "Hiragino Sans GB";
+        src: local("Hiragino Sans GB");
+      }
+
+      @font-face {
+        font-family: "Microsoft YaHei";
+        src: local("Microsoft YaHei");
+      }
+
+      @font-face {
+        font-family: "Songti SC";
+        src: local("Songti SC");
+      }
+
+      @font-face {
+        font-family: "STSong";
+        src: local("STSong");
+      }
+
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #08090d;
+        color: #f3f0ea;
+      }
+
+      body {
+        font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      }
+
+      #root {
+        position: relative;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 76% 18%, rgba(139, 220, 255, 0.13), rgba(139, 220, 255, 0) 30%),
+          radial-gradient(circle at 16% 86%, rgba(215, 168, 110, 0.12), rgba(215, 168, 110, 0) 28%),
+          #08090d;
+      }
+
+      .scene {
+        position: absolute;
+        inset: 0;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background-color: #08090d;
+      }
+
+      #scene1 {
+        z-index: 1;
+      }
+
+      #scene2,
+      #scene3,
+      #scene4,
+      #scene5 {
+        z-index: 2;
+        opacity: 0;
+        display: none;
+      }
+
+      .scene-content {
+        position: relative;
+        z-index: 5;
+        width: 100%;
+        height: 100%;
+        padding: 92px 118px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 30px;
+      }
+
+      .eyebrow {
+        color: #d7a86e;
+        font-family: "JetBrains Mono", "SF Mono", monospace;
+        font-size: 23px;
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      .headline {
+        max-width: 1160px;
+        font-family: "Songti SC", "STSong", serif;
+        font-size: 104px;
+        line-height: 1.02;
+        letter-spacing: 0.01em;
+        font-weight: 900;
+      }
+
+      h2 {
+        max-width: 900px;
+        font-family: "Songti SC", "STSong", serif;
+        font-size: 74px;
+        line-height: 1.1;
+        font-weight: 900;
+      }
+
+      .body-copy {
+        max-width: 760px;
+        color: #c7ceda;
+        font-size: 31px;
+        line-height: 1.48;
+        font-weight: 350;
+      }
+
+      .mono {
+        font-family: "JetBrains Mono", "SF Mono", monospace;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .caption {
+        color: #a9b0bd;
+        font-size: 24px;
+        line-height: 1.5;
+      }
+
+      .chrome {
+        border: 1px solid rgba(243, 240, 234, 0.14);
+        border-radius: 18px;
+        overflow: hidden;
+        background: #111318;
+        box-shadow: 0 34px 100px rgba(0, 0, 0, 0.42);
+      }
+
+      .chrome-bar {
+        height: 50px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        padding: 0 22px;
+        border-bottom: 1px solid rgba(243, 240, 234, 0.12);
+        background: #15171c;
+      }
+
+      .browser-dot {
+        width: 14px;
+        height: 14px;
+        border-radius: 999px;
+        background: #787f89;
+      }
+
+      .browser-dot:nth-child(1) {
+        background: #d97562;
+      }
+
+      .browser-dot:nth-child(2) {
+        background: #d7a86e;
+      }
+
+      .browser-dot:nth-child(3) {
+        background: #86bd72;
+      }
+
+      .url {
+        margin-left: 14px;
+        color: #8e96a4;
+        font-family: "JetBrains Mono", "SF Mono", monospace;
+        font-size: 17px;
+      }
+
+      .chrome img {
+        width: 100%;
+        height: 100%;
+        display: block;
+        object-fit: cover;
+      }
+
+      .browser-shot {
+        position: absolute;
+        right: 90px;
+        bottom: 72px;
+        width: 880px;
+        height: 560px;
+      }
+
+      .browser-shot .shot-body {
+        height: 510px;
+      }
+
+      .s1-title {
+        max-width: 900px;
+      }
+
+      .s1-copy {
+        max-width: 660px;
+      }
+
+      .reference-wrap {
+        position: absolute;
+        right: 150px;
+        top: 126px;
+        width: 426px;
+        height: 762px;
+        border-radius: 24px;
+        overflow: hidden;
+        border: 1px solid rgba(243, 240, 234, 0.18);
+        box-shadow: 0 28px 80px rgba(0, 0, 0, 0.34);
+      }
+
+      .reference-wrap img,
+      .preview-wrap img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        display: block;
+      }
+
+      .scan-line {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: 0;
+        height: 4px;
+        background: #8bdcff;
+        box-shadow: 0 0 28px rgba(139, 220, 255, 0.75);
+      }
+
+      .sample-panel {
+        width: 850px;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+      }
+
+      .info-card {
+        min-height: 178px;
+        padding: 26px 28px;
+        border-radius: 18px;
+        border: 1px solid rgba(243, 240, 234, 0.13);
+        background: rgba(17, 19, 24, 0.88);
+      }
+
+      .info-card .label {
+        margin-bottom: 12px;
+        color: #d7a86e;
+        font-family: "JetBrains Mono", "SF Mono", monospace;
+        font-size: 19px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .info-card p {
+        color: #d6dce7;
+        font-size: 29px;
+        line-height: 1.32;
+      }
+
+      .formula-box {
+        width: 820px;
+        padding: 28px 32px;
+        border: 1px solid rgba(139, 220, 255, 0.22);
+        border-radius: 18px;
+        background: rgba(9, 12, 17, 0.82);
+        color: #d7e7f1;
+        font-family: "JetBrains Mono", "SF Mono", monospace;
+        font-size: 25px;
+        line-height: 1.7;
+      }
+
+      .cyan {
+        color: #8bdcff;
+      }
+
+      .amber {
+        color: #d7a86e;
+      }
+
+      .green {
+        color: #a6d98a;
+      }
+
+      .flow-map {
+        position: absolute;
+        right: 106px;
+        top: 134px;
+        width: 800px;
+        height: 724px;
+        border-radius: 24px;
+        border: 1px solid rgba(243, 240, 234, 0.15);
+        background:
+          radial-gradient(circle at 60% 42%, rgba(139, 220, 255, 0.16), rgba(139, 220, 255, 0) 35%),
+          rgba(17, 19, 24, 0.86);
+        overflow: hidden;
+      }
+
+      .flow-map img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        opacity: 0.34;
+        filter: saturate(0.85) contrast(1.12);
+      }
+
+      .vector-grid {
+        position: absolute;
+        inset: 52px;
+        display: grid;
+        grid-template-columns: repeat(9, 1fr);
+        grid-template-rows: repeat(6, 1fr);
+      }
+
+      .vector {
+        position: relative;
+        align-self: center;
+        justify-self: center;
+        width: 54px;
+        height: 3px;
+        background: rgba(139, 220, 255, 0.7);
+        border-radius: 999px;
+        box-shadow: 0 0 16px rgba(139, 220, 255, 0.28);
+      }
+
+      .vector::after {
+        content: "";
+        position: absolute;
+        right: -2px;
+        top: -5px;
+        width: 12px;
+        height: 12px;
+        border-top: 3px solid rgba(139, 220, 255, 0.8);
+        border-right: 3px solid rgba(139, 220, 255, 0.8);
+        transform: rotate(45deg);
+      }
+
+      .force-layout {
+        display: grid;
+        grid-template-columns: 520px 500px 460px;
+        gap: 38px;
+        align-items: center;
+      }
+
+      .force-cards {
+        display: grid;
+        gap: 18px;
+      }
+
+      .force-card {
+        padding: 22px 26px;
+        border-radius: 18px;
+        border: 1px solid rgba(243, 240, 234, 0.13);
+        background: rgba(17, 19, 24, 0.88);
+      }
+
+      .force-card h3 {
+        margin-bottom: 10px;
+        color: #f3f0ea;
+        font-size: 30px;
+        line-height: 1.2;
+      }
+
+      .force-card p {
+        color: #b7bfcd;
+        font-size: 23px;
+        line-height: 1.42;
+      }
+
+      .preview-wrap {
+        position: relative;
+        width: 548px;
+        height: 740px;
+        border-radius: 24px;
+        border: 1px solid rgba(243, 240, 234, 0.16);
+        overflow: hidden;
+        box-shadow: 0 30px 90px rgba(0, 0, 0, 0.38);
+      }
+
+      .cursor-ring {
+        position: absolute;
+        right: 160px;
+        top: 236px;
+        width: 180px;
+        height: 180px;
+        border-radius: 999px;
+        border: 3px solid rgba(139, 220, 255, 0.74);
+        box-shadow: 0 0 50px rgba(139, 220, 255, 0.32);
+      }
+
+      .cursor-ring::after {
+        content: "";
+        position: absolute;
+        inset: 44px;
+        border-radius: 999px;
+        border: 2px solid rgba(215, 168, 110, 0.74);
+      }
+
+      .s4-preview {
+        width: 460px;
+        height: 620px;
+      }
+
+      .final-layout {
+        display: grid;
+        grid-template-columns: 720px 1fr;
+        gap: 64px;
+        align-items: center;
+      }
+
+      .final-copy {
+        display: flex;
+        flex-direction: column;
+        gap: 28px;
+      }
+
+      .thesis {
+        padding: 30px 34px;
+        border-radius: 20px;
+        border: 1px solid rgba(139, 220, 255, 0.22);
+        background: rgba(139, 220, 255, 0.075);
+        color: #e3f5ff;
+        font-size: 34px;
+        line-height: 1.42;
+      }
+
+      .particle-line,
+      .ambient-line {
+        position: absolute;
+        z-index: 1;
+        height: 2px;
+        border-radius: 999px;
+        background: rgba(139, 220, 255, 0.28);
+        box-shadow: 0 0 18px rgba(139, 220, 255, 0.18);
+        transform-origin: left center;
+      }
+
+      .ambient-line {
+        opacity: 0.42;
+      }
+
+      .grain {
+        position: absolute;
+        inset: 0;
+        z-index: 3;
+        pointer-events: none;
+        opacity: 0.13;
+        background-image:
+          linear-gradient(rgba(255, 255, 255, 0.045) 1px, transparent 1px),
+          linear-gradient(90deg, rgba(255, 255, 255, 0.035) 1px, transparent 1px);
+        background-size: 72px 72px;
+        mix-blend-mode: screen;
+      }
+
+      .transition-wipe {
+        position: absolute;
+        inset: 0;
+        z-index: 20;
+        pointer-events: none;
+        background: linear-gradient(90deg, rgba(8, 9, 13, 0), rgba(139, 220, 255, 0.34), rgba(8, 9, 13, 0));
+        opacity: 0;
+      }
+
+      .blackout {
+        position: absolute;
+        inset: 0;
+        z-index: 30;
+        pointer-events: none;
+        background: #08090d;
+        opacity: 0;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="30"
+      data-width="1920"
+      data-height="1080"
+    >
+      <div id="scene1" class="scene">
+        <div class="decoratives" data-layout-ignore></div>
+        <div class="grain" data-layout-ignore></div>
+        <div class="scene-content">
+          <p class="eyebrow s1-kicker">Flow Field Portrait</p>
+          <h1 class="s1-title">流场不是滤镜，而是一张运动地图</h1>
+          <p class="body-copy s1-copy">图像负责结构，噪声负责流动，鼠标负责扰动。粒子只是把这张地图画出来。</p>
+        </div>
+        <div class="browser-shot chrome s1-shot">
+          <div class="chrome-bar">
+            <span class="browser-dot"></span>
+            <span class="browser-dot"></span>
+            <span class="browser-dot"></span>
+            <span class="url">flow-field-portrait.html</span>
+          </div>
+          <div class="shot-body">
+            <img src="rendered-page.png" alt="当前 p5.js 粒子流场渲染页面" />
+          </div>
+        </div>
+      </div>
+
+      <div id="scene2" class="scene">
+        <div class="decoratives" data-layout-ignore></div>
+        <div class="grain" data-layout-ignore></div>
+        <div class="scene-content">
+          <p class="eyebrow s2-kicker">Step 01 · Sampling</p>
+          <h2 class="s2-title">先从照片里找出粒子应该停留的位置</h2>
+          <div class="sample-panel">
+            <div class="info-card s2-card">
+              <div class="label">luminance</div>
+              <p>亮度让阴影、衣服层次和身体结构被识别出来。</p>
+            </div>
+            <div class="info-card s2-card">
+              <div class="label">edge weight</div>
+              <p>边缘让头发、五官、鞋子和机械细节留下轨迹。</p>
+            </div>
+          </div>
+        </div>
+        <div class="reference-wrap s2-image">
+          <img src="reference.png" alt="白色赛博人物参考图" />
+          <div class="scan-line" data-layout-allow-overflow></div>
+        </div>
+      </div>
+
+      <div id="scene3" class="scene">
+        <div class="decoratives" data-layout-ignore></div>
+        <div class="grain" data-layout-ignore></div>
+        <div class="scene-content">
+          <p class="eyebrow s3-kicker">Step 02 · Vector Field</p>
+          <h2 class="s3-title">边缘切线定结构，噪声流场定风感</h2>
+          <div class="formula-box s3-formula">
+            <div><span class="cyan">tangent</span> = atan2(gy, gx) + HALF_PI</div>
+            <div><span class="amber">noiseAngle</span> = noise(x * scale, y * scale, time)</div>
+            <div><span class="green">velocity</span> = noise + tangent * imageBlend</div>
+          </div>
+        </div>
+        <div class="flow-map s3-map">
+          <img src="preview.png" alt="粒子流场重构预览" />
+          <div class="vector-grid"></div>
+        </div>
+      </div>
+
+      <div id="scene4" class="scene">
+        <div class="decoratives" data-layout-ignore></div>
+        <div class="grain" data-layout-ignore></div>
+        <div class="scene-content">
+          <p class="eyebrow s4-kicker">Step 03 · Forces</p>
+          <div class="force-layout">
+            <div>
+              <h2 class="s4-title">每个粒子同时受到三种力</h2>
+              <p class="body-copy s4-copy">它不是一次性散开，而是在图像、流场和鼠标之间不断协商。</p>
+            </div>
+            <div class="force-cards">
+              <div class="force-card s4-card">
+                <h3>流场力</h3>
+                <p>沿当前位置的向量移动，决定整体笔触方向。</p>
+              </div>
+              <div class="force-card s4-card">
+                <h3>回家力</h3>
+                <p>轻微拉回出生点，避免人物结构完全飞散。</p>
+              </div>
+              <div class="force-card s4-card">
+                <h3>鼠标涡旋</h3>
+                <p>局部加入切向扰动，拖拽时补充新的流线。</p>
+              </div>
+            </div>
+            <div class="preview-wrap s4-preview">
+              <img src="interaction-page.png" alt="当前渲染页面中的粒子流场结果" />
+              <div class="cursor-ring" data-layout-ignore></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div id="scene5" class="scene">
+        <div class="decoratives" data-layout-ignore></div>
+        <div class="grain" data-layout-ignore></div>
+        <div class="scene-content">
+          <div class="final-layout">
+            <div class="preview-wrap s5-preview">
+              <img src="explainer-page.png" alt="说明页和当前渲染网页" />
+            </div>
+            <div class="final-copy">
+              <p class="eyebrow s5-kicker">Core Idea</p>
+              <h2 class="s5-title">哪里该成像，往哪里流动</h2>
+              <p class="thesis s5-thesis">图像重构类流场的关键，是让粒子读懂两件事：画面结构在哪里，以及结构处应该沿哪个方向移动。</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="transition-wipe" data-layout-ignore></div>
+      <div class="blackout" data-layout-ignore></div>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+
+      function addAmbientLines(sceneId, count) {
+        const holder = document.querySelector(sceneId + " .decoratives");
+        for (let i = 0; i < count; i++) {
+          const line = document.createElement("div");
+          line.className = "ambient-line";
+          const x = 80 + ((i * 271) % 1760);
+          const y = 60 + ((i * 149) % 960);
+          const width = 80 + ((i * 37) % 180);
+          const angle = -38 + ((i * 29) % 76);
+          line.style.left = x + "px";
+          line.style.top = y + "px";
+          line.style.width = width + "px";
+          line.style.transform = "rotate(" + angle + "deg)";
+          holder.appendChild(line);
+        }
+      }
+
+      function addVectors() {
+        const grid = document.querySelector(".vector-grid");
+        for (let i = 0; i < 54; i++) {
+          const vector = document.createElement("div");
+          vector.className = "vector";
+          const angle = -72 + ((i * 31) % 144);
+          vector.style.transform = "rotate(" + angle + "deg)";
+          grid.appendChild(vector);
+        }
+      }
+
+      ["#scene1", "#scene2", "#scene3", "#scene4", "#scene5"].forEach(function (id, index) {
+        addAmbientLines(id, 22 + index * 4);
+      });
+      addVectors();
+
+      const tl = gsap.timeline({ paused: true });
+
+      function hasTargets(selector) {
+        return document.querySelectorAll(selector).length > 0;
+      }
+
+      function addFromIfPresent(selector, vars, at) {
+        if (hasTargets(selector)) {
+          tl.from(selector, vars, at);
+        }
+      }
+
+      function enterScene(selector, at) {
+        addFromIfPresent(selector + " .eyebrow", { y: -28, opacity: 0, duration: 0.48, ease: "power3.out" }, at + 0.15);
+        addFromIfPresent(selector + " h1, " + selector + " h2", { x: -62, opacity: 0, duration: 0.72, ease: "expo.out" }, at + 0.32);
+        addFromIfPresent(selector + " .body-copy, " + selector + " .caption, " + selector + " .thesis", { y: 36, opacity: 0, duration: 0.58, ease: "sine.out" }, at + 0.7);
+        addFromIfPresent(selector + " .info-card, " + selector + " .force-card", { y: 42, opacity: 0, scale: 0.96, duration: 0.54, stagger: 0.12, ease: "back.out(1.35)" }, at + 0.92);
+      }
+
+      function transitionTo(outgoing, incoming, at, mode) {
+        tl.set(incoming, { display: "block", opacity: 1, xPercent: mode === "push" ? 5 : 0, scale: mode === "zoom" ? 1.035 : 1, filter: "blur(10px)" }, at);
+        tl.fromTo(".transition-wipe", { opacity: 0, xPercent: -120 }, { opacity: 1, xPercent: 140, duration: 0.46, ease: "power3.inOut" }, at);
+        tl.to(outgoing, { xPercent: mode === "push" ? -5 : 0, scale: mode === "zoom" ? 0.985 : 1, filter: "blur(12px)", duration: 0.46, ease: "power3.inOut" }, at);
+        tl.to(incoming, { xPercent: 0, scale: 1, filter: "blur(0px)", duration: 0.54, ease: "power3.out" }, at + 0.08);
+        tl.set(outgoing, { display: "none" }, at + 0.58);
+        tl.set(".transition-wipe", { opacity: 0, xPercent: -120 }, at + 0.6);
+      }
+
+      tl.to("#scene1 .ambient-line", { x: 80, y: -22, opacity: 0.2, duration: 5.0, stagger: 0.012, ease: "sine.inOut" }, 0);
+      enterScene("#scene1", 0);
+      tl.from(".s1-shot", { x: 96, y: 46, opacity: 0, scale: 0.94, duration: 0.9, ease: "power4.out" }, 1.0);
+      tl.to(".s1-shot", { y: -18, duration: 3.0, ease: "sine.inOut" }, 2.0);
+
+      transitionTo("#scene1", "#scene2", 5.1, "push");
+      tl.to("#scene2 .ambient-line", { x: -64, y: 36, opacity: 0.24, duration: 5.1, stagger: 0.01, ease: "sine.inOut" }, 5.2);
+      enterScene("#scene2", 5.2);
+      tl.from(".s2-image", { x: 80, opacity: 0, scale: 0.96, duration: 0.74, ease: "power4.out" }, 5.75);
+      tl.from(".scan-line", { y: -760, duration: 0.1 }, 5.75);
+      tl.to(".scan-line", { y: 762, duration: 4.4, ease: "none" }, 6.0);
+
+      transitionTo("#scene2", "#scene3", 10.8, "zoom");
+      tl.to("#scene3 .ambient-line", { x: 54, y: 50, opacity: 0.3, duration: 5.8, stagger: 0.008, ease: "sine.inOut" }, 10.9);
+      enterScene("#scene3", 10.9);
+      tl.from(".s3-formula", { y: 46, opacity: 0, scale: 0.97, duration: 0.7, ease: "circ.out" }, 11.75);
+      tl.from(".s3-map", { x: 86, opacity: 0, scale: 0.95, duration: 0.74, ease: "power4.out" }, 11.52);
+      tl.from(".vector", { opacity: 0, scaleX: 0.1, duration: 0.38, stagger: { amount: 0.75, from: "center" }, ease: "back.out(1.7)" }, 12.2);
+      tl.to(".vector", { rotation: "+=18", duration: 4.2, stagger: 0.012, ease: "sine.inOut" }, 13.0);
+
+      transitionTo("#scene3", "#scene4", 17.0, "push");
+      tl.to("#scene4 .ambient-line", { x: -70, y: -32, opacity: 0.25, duration: 5.7, stagger: 0.01, ease: "sine.inOut" }, 17.1);
+      enterScene("#scene4", 17.1);
+      tl.from(".s4-preview", { x: 70, opacity: 0, scale: 0.95, duration: 0.72, ease: "power4.out" }, 17.75);
+      tl.from(".cursor-ring", { scale: 0.5, opacity: 0, duration: 0.48, ease: "back.out(1.6)" }, 18.55);
+      tl.to(".cursor-ring", { scale: 1.16, duration: 1.0, repeat: 3, yoyo: true, ease: "sine.inOut" }, 19.1);
+
+      transitionTo("#scene4", "#scene5", 23.1, "zoom");
+      tl.to("#scene5 .ambient-line", { x: 60, y: 28, opacity: 0.3, duration: 5.8, stagger: 0.01, ease: "sine.inOut" }, 23.2);
+      enterScene("#scene5", 23.2);
+      tl.from(".s5-preview", { x: -78, opacity: 0, scale: 0.95, duration: 0.75, ease: "power4.out" }, 23.8);
+      tl.from(".s5-thesis", { y: 44, opacity: 0, duration: 0.62, ease: "back.out(1.25)" }, 24.65);
+      tl.to(".s5-preview", { scale: 1.025, duration: 4.0, ease: "sine.inOut" }, 25.2);
+
+      tl.to("#scene5 .scene-content", { opacity: 0, y: -24, duration: 0.55, ease: "power2.in" }, 29.0);
+      tl.to(".blackout", { opacity: 1, duration: 0.65, ease: "sine.inOut" }, 29.15);
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

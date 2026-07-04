@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="data:,">
+<title>图像粒子流场重构原理讲解</title>
+<style>
+  * { box-sizing: border-box; }
+  :root {
+    --bg: #0b0b0d;
+    --panel: #131416;
+    --panel-strong: #191a1d;
+    --line: rgba(238, 242, 248, 0.13);
+    --text: #f3f0ea;
+    --muted: #a9adb6;
+    --soft: #767d89;
+    --cyan: #7fd8ff;
+    --warm: #d6a56a;
+    --green: #9fd38a;
+  }
+  html {
+    background: var(--bg);
+    color: var(--text);
+    overflow-x: hidden;
+  }
+  body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    background:
+      linear-gradient(180deg, rgba(214, 165, 106, 0.055), transparent 34rem),
+      var(--bg);
+    overflow-x: hidden;
+  }
+  a { color: inherit; }
+  .shell {
+    min-height: 100vh;
+    display: grid;
+    grid-template-columns: minmax(520px, 1.14fr) minmax(360px, 0.86fr);
+    min-width: 0;
+  }
+  .live {
+    min-height: 100vh;
+    min-width: 0;
+    padding: 18px;
+    border-right: 1px solid var(--line);
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    background:
+      linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent 18rem),
+      #07080a;
+  }
+  .live-header,
+  .read-header {
+    display: flex;
+    min-width: 0;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+  }
+  .eyebrow {
+    margin: 0 0 6px;
+    color: var(--warm);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+  h1 {
+    margin: 0;
+    max-width: 720px;
+    font-size: clamp(28px, 4vw, 54px);
+    line-height: 1.02;
+    letter-spacing: 0;
+    font-weight: 760;
+    overflow-wrap: anywhere;
+    word-break: break-all;
+    line-break: anywhere;
+  }
+  .live-title {
+    font-size: clamp(22px, 2.8vw, 42px);
+  }
+  .lede {
+    margin: 10px 0 0;
+    max-width: 680px;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.7;
+  }
+  .open-link {
+    flex: 0 0 auto;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 36px;
+    padding: 0 14px;
+    border: 1px solid rgba(127, 216, 255, 0.28);
+    border-radius: 7px;
+    color: #e8f8ff;
+    background: rgba(127, 216, 255, 0.08);
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 650;
+  }
+  .browser-frame {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    min-height: 640px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+    background: #050608;
+    box-shadow: 0 30px 80px rgba(0, 0, 0, 0.42);
+  }
+  .browser-bar {
+    height: 34px;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 0 12px;
+    border-bottom: 1px solid var(--line);
+    background: #111216;
+  }
+  .dot {
+    width: 9px;
+    height: 9px;
+    border-radius: 999px;
+    background: #5e646e;
+  }
+  .dot:nth-child(1) { background: #d97562; }
+  .dot:nth-child(2) { background: #d4a64d; }
+  .dot:nth-child(3) { background: #7eb36b; }
+  .browser-url {
+    min-width: 0;
+    margin-left: 8px;
+    color: #878d99;
+    font: 11px/1.2 "SF Mono", Menlo, Consolas, monospace;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  iframe {
+    width: 100%;
+    min-width: 0;
+    height: calc(100% - 34px);
+    min-height: 606px;
+    border: 0;
+    display: block;
+    background: #07080d;
+  }
+  .reader {
+    min-height: 100vh;
+    min-width: 0;
+    padding: 22px 24px 30px;
+    overflow: auto;
+  }
+  .read-header {
+    align-items: center;
+    margin-bottom: 20px;
+  }
+  .mini-shot {
+    width: 118px;
+    aspect-ratio: 1 / 1;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    object-fit: cover;
+    object-position: center;
+  }
+  .summary {
+    margin: 0 0 22px;
+    color: var(--muted);
+    font-size: 15px;
+    line-height: 1.75;
+  }
+  .principles {
+    display: grid;
+    gap: 10px;
+  }
+  .principle {
+    display: grid;
+    grid-template-columns: 42px 1fr;
+    gap: 14px;
+    padding: 14px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.032);
+  }
+  .index {
+    width: 42px;
+    height: 42px;
+    display: grid;
+    place-items: center;
+    border-radius: 50%;
+    border: 1px solid rgba(214, 165, 106, 0.32);
+    color: var(--warm);
+    font: 700 13px/1 "SF Mono", Menlo, Consolas, monospace;
+    background: rgba(214, 165, 106, 0.07);
+  }
+  .principle h2 {
+    margin: 0 0 5px;
+    font-size: 16px;
+    line-height: 1.35;
+    letter-spacing: 0;
+  }
+  .principle p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.65;
+  }
+  .formula {
+    margin: 20px 0;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--panel);
+    overflow: hidden;
+  }
+  .formula-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--line);
+    color: var(--soft);
+    font-size: 12px;
+  }
+  pre {
+    margin: 0;
+    padding: 14px;
+    overflow-x: auto;
+    color: #d7e5ee;
+    font: 12px/1.65 "SF Mono", Menlo, Consolas, monospace;
+  }
+  .token-cyan { color: var(--cyan); }
+  .token-warm { color: var(--warm); }
+  .token-green { color: var(--green); }
+  .comparison {
+    display: grid;
+    grid-template-columns: 0.82fr 1.18fr;
+    gap: 10px;
+    margin-top: 20px;
+  }
+  .media-card {
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    overflow: hidden;
+    background: var(--panel-strong);
+  }
+  .media-card img {
+    width: 100%;
+    height: 220px;
+    display: block;
+    object-fit: cover;
+  }
+  .media-card figcaption {
+    margin: 0;
+    padding: 9px 11px 11px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+  .takeaway {
+    margin: 22px 0 0;
+    padding: 15px;
+    border-left: 3px solid var(--cyan);
+    background: rgba(127, 216, 255, 0.055);
+    color: #dceefa;
+    font-size: 14px;
+    line-height: 1.7;
+  }
+  @media (max-width: 1060px) {
+    .shell { grid-template-columns: 1fr; }
+    .live {
+      min-height: auto;
+      border-right: 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .browser-frame { min-height: 78vh; }
+    .reader { min-height: auto; }
+  }
+  @media (max-width: 680px) {
+    .live,
+    .reader { padding: 14px; }
+    .live-header,
+    .read-header { flex-direction: column; }
+    h1 {
+      font-size: 34px;
+      line-height: 1.08;
+    }
+    .live-title {
+      font-size: 28px;
+      line-height: 1.12;
+    }
+    .live-title span {
+      display: block;
+    }
+    .open-link { width: 100%; }
+    .browser-frame { min-height: 72vh; }
+    iframe { min-height: calc(72vh - 34px); }
+    .principle { grid-template-columns: 1fr; }
+    .comparison { grid-template-columns: 1fr; }
+    .media-card img { height: 260px; }
+    .mini-shot { display: none; }
+  }
+</style>
+</head>
+<body>
+<main class="shell">
+  <section class="live" aria-label="当前渲染页面">
+    <div class="live-header">
+      <div>
+        <p class="eyebrow">Live Render</p>
+        <h1 class="live-title"><span>图像被拆成粒子，</span><span>粒子再沿着图像自己的</span><span>纹理流动</span></h1>
+        <p class="lede">左侧嵌入的是当前 p5.js 渲染页，参数面板、鼠标扰动、拖拽补粒子和 PNG 保存都保留。你可以直接在这里演示，也可以打开全屏版本。</p>
+      </div>
+      <a class="open-link" href="flow-field-portrait.html" target="_blank" rel="noreferrer">打开全屏</a>
+    </div>
+
+    <div class="browser-frame">
+      <div class="browser-bar" aria-hidden="true">
+        <span class="dot"></span>
+        <span class="dot"></span>
+        <span class="dot"></span>
+        <span class="browser-url">flow-field-portrait.html</span>
+      </div>
+      <iframe src="flow-field-portrait.html" title="图像粒子流场重构交互页面"></iframe>
+    </div>
+  </section>
+
+  <section class="reader" aria-label="关键原理说明">
+    <div class="read-header">
+      <div>
+        <p class="eyebrow">Principles</p>
+        <h1>关键原理</h1>
+      </div>
+      <img class="mini-shot" src="preview.png" alt="粒子流场重构预览">
+    </div>
+
+    <p class="summary">这个效果不是把图片加一层滤镜，而是把图片转换成粒子系统的“运动地图”：图片决定哪里应该成像，流场决定粒子怎么走，鼠标决定局部怎样被扰动。</p>
+
+    <div class="principles">
+      <article class="principle">
+        <div class="index">01</div>
+        <div>
+          <h2>图像采样：从照片里找可停留区域</h2>
+          <p>程序先读取每个像素的亮度和颜色。因为图二整体偏白，所以不能只找暗部，还要把衣褶、头发、机械线条这些边缘信息一起算进权重。</p>
+        </div>
+      </article>
+      <article class="principle">
+        <div class="index">02</div>
+        <div>
+          <h2>边缘切线：让粒子沿轮廓走</h2>
+          <p>亮度梯度指向变化最快的方向，取它的垂直方向就是轮廓切线。粒子在人物边缘附近更相信这条切线，所以会贴着头发、衣服和鞋子的纹理滑动。</p>
+        </div>
+      </article>
+      <article class="principle">
+        <div class="index">03</div>
+        <div>
+          <h2>噪声流场：给静态结构加入风感</h2>
+          <p>Perlin Noise 提供连续的方向变化，让线条不会像机械排线。图像边缘强的地方偏向切线，平坦区域偏向噪声，画面才既成像又有流动感。</p>
+        </div>
+      </article>
+      <article class="principle">
+        <div class="index">04</div>
+        <div>
+          <h2>拖尾反馈：用时间累积出笔触</h2>
+          <p>粒子每帧只画很短的一段线，旧画面用半透明暗色慢慢擦掉。看起来像一幅画被持续重写，线条密集处自然形成明暗层次。</p>
+        </div>
+      </article>
+      <article class="principle">
+        <div class="index">05</div>
+        <div>
+          <h2>鼠标涡旋：让用户参与重构</h2>
+          <p>鼠标附近会加入切向力，按住拖拽时还会注入新粒子。它不会破坏整张图，因为粒子仍然受到图像出生点的轻微回拉。</p>
+        </div>
+      </article>
+    </div>
+
+    <div class="formula">
+      <div class="formula-header">
+        <span>核心混合逻辑</span>
+        <span>image tangent + noise field</span>
+      </div>
+      <pre><span class="token-cyan">tangent</span> = atan2(gy, gx) + HALF_PI
+<span class="token-warm">noiseAngle</span> = noise(x * scale, y * scale, time) * TWO_PI
+<span class="token-green">imageBlend</span> = detail * imagePull
+
+velocity =
+  direction(<span class="token-warm">noiseAngle</span>) * turbulence
+  + direction(<span class="token-cyan">tangent</span>) * <span class="token-green">imageBlend</span></pre>
+    </div>
+
+    <div class="comparison">
+      <figure class="media-card">
+        <img src="reference.png" alt="原始参考图">
+        <figcaption>参考图提供颜色、亮度、边缘和人物结构。</figcaption>
+      </figure>
+      <figure class="media-card">
+        <img src="preview.png" alt="流场粒子重构结果">
+        <figcaption>渲染结果把结构交给粒子线条，用拖尾保留运动痕迹。</figcaption>
+      </figure>
+    </div>
+
+    <p class="takeaway">一句话总结：流场不是随机飘动的装饰，而是一张可被粒子读取的运动地图；图像重构的关键，是让这张地图同时知道“哪里该成像”和“该沿哪个方向流动”。</p>
+  </section>
+</main>
+</body>
+</html>

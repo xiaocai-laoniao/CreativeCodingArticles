@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>p5.js 完美循环：星潮织机</title>
+<script src="https://cdn.jsdelivr.net/npm/p5@2/lib/p5.min.js"></script>
+<script>p5.disableFriendlyErrors = true;</script>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    overflow: hidden;
+    background: #070609;
+  }
+  canvas {
+    display: block;
+  }
+</style>
+</head>
+<body>
+<script>
+const CONFIG = {
+  seed: 73142,
+  fps: 30,
+  loopFrames: 240,
+  strandCount: 54,
+  beadCount: 230,
+  petalCount: 72
+};
+
+const PALETTE = {
+  bgDeep: '#070609',
+  bgWine: '#1b0c18',
+  bgWarm: '#241409',
+  amber: [38, 88, 96],
+  teal: [173, 66, 94],
+  magenta: [330, 72, 95],
+  violet: [264, 55, 90],
+  lime: [96, 44, 88],
+  ivory: [48, 22, 96],
+  rust: [14, 74, 82]
+};
+
+let grainLayer;
+let paused = false;
+const URL_PARAMS = new URLSearchParams(window.location.search);
+let forcedLoopFrame = URL_PARAMS.has('frame') ? Number(URL_PARAMS.get('frame')) : null;
+if (!Number.isFinite(forcedLoopFrame)) forcedLoopFrame = null;
+
+window.__forceLoopFrame = (frameIndex) => {
+  forcedLoopFrame = frameIndex;
+  redraw();
+};
+window.__clearForcedLoopFrame = () => {
+  forcedLoopFrame = null;
+};
+window.__loopFrameCount = CONFIG.loopFrames;
+
+function setup() {
+  pixelDensity(1);
+  createCanvas(windowWidth, windowHeight);
+  frameRate(CONFIG.fps);
+  colorMode(HSB, 360, 100, 100, 100);
+  resetSketch();
+  if (forcedLoopFrame !== null && Number.isFinite(forcedLoopFrame)) {
+    noLoop();
+  }
+}
+
+function resetSketch() {
+  randomSeed(CONFIG.seed);
+  noiseSeed(CONFIG.seed);
+  buildGrainLayer();
+}
+
+function draw() {
+  const t = timeLoop(CONFIG.loopFrames, 0);
+  renderPerfectLoop(t);
+}
+
+function renderPerfectLoop(t) {
+  const cx = width * 0.5;
+  const cy = height * 0.5;
+  const unit = Math.min(width, height);
+  const inner = unit * 0.115;
+  const outer = unit * 0.435;
+
+  drawAtmosphere(cx, cy, unit, t);
+
+  blendMode(BLEND);
+  image(grainLayer, 0, 0, width, height);
+
+  push();
+  translate(cx, cy);
+  drawClockGrid(unit, t);
+
+  blendMode(ADD);
+  drawWovenFamilies(inner, outer, t);
+  drawOrbitingBeads(inner, outer, t);
+  drawCentralAperture(unit, t);
+  blendMode(BLEND);
+  pop();
+
+  drawVignette();
+}
+
+function drawAtmosphere(cx, cy, unit, t) {
+  const ctx = drawingContext;
+  const driftX = Math.cos(TWO_PI * t) * unit * 0.045;
+  const driftY = Math.sin(TWO_PI * t) * unit * 0.035;
+  const radial = ctx.createRadialGradient(
+    cx + driftX,
+    cy + driftY,
+    unit * 0.06,
+    cx,
+    cy,
+    unit * 0.82
+  );
+  radial.addColorStop(0.00, '#35203c');
+  radial.addColorStop(0.28, PALETTE.bgWine);
+  radial.addColorStop(0.62, PALETTE.bgWarm);
+  radial.addColorStop(1.00, PALETTE.bgDeep);
+  ctx.save();
+  ctx.fillStyle = radial;
+  ctx.fillRect(0, 0, width, height);
+  ctx.restore();
+
+  noFill();
+  for (let i = 0; i < 16; i++) {
+    const p = i / 16;
+    const ring = unit * (0.18 + p * 0.61);
+    const pulse = 0.5 + 0.5 * Math.sin(TWO_PI * (t + p * 0.72));
+    stroke(38 + p * 35, 44, 72, 3.5 + pulse * 3.5);
+    strokeWeight(1);
+    ellipse(cx, cy, ring, ring * (0.72 + 0.08 * Math.sin(TWO_PI * (t + p))));
+  }
+}
+
+function drawClockGrid(unit, t) {
+  noFill();
+  const gridHue = 42 + 10 * Math.sin(TWO_PI * t);
+  for (let i = 0; i < 9; i++) {
+    const r = unit * (0.14 + i * 0.043);
+    const a = 7 + 5 * Math.sin(TWO_PI * (t + i * 0.11));
+    stroke(gridHue, 32, 70, a);
+    strokeWeight(i % 3 === 0 ? 1.4 : 0.65);
+    ellipse(0, 0, r * 2, r * 2);
+  }
+
+  for (let i = 0; i < 72; i++) {
+    const a = TWO_PI * (i / 72);
+    const shortTick = i % 6 !== 0;
+    const r1 = unit * (shortTick ? 0.392 : 0.372);
+    const r2 = unit * 0.425;
+    const breath = inOutSin(tri(frac01(t + i / 72)));
+    stroke(182, 28, 84, shortTick ? 10 : 18 + breath * 15);
+    strokeWeight(shortTick ? 0.7 : 1.4);
+    line(Math.cos(a) * r1, Math.sin(a) * r1, Math.cos(a) * r2, Math.sin(a) * r2);
+  }
+}
+
+function drawWovenFamilies(inner, outer, t) {
+  const families = [
+    { color: PALETTE.teal, dir: 1, twist: 0.78, weight: 1.25, phase: 0.00 },
+    { color: PALETTE.amber, dir: -1, twist: -0.62, weight: 1.05, phase: 0.37 },
+    { color: PALETTE.magenta, dir: 2, twist: 0.44, weight: 0.75, phase: 0.68 }
+  ];
+
+  for (const family of families) {
+    for (let i = 0; i < CONFIG.strandCount; i++) {
+      const lane = i / CONFIG.strandCount;
+      const phase = frac01(lane + family.phase);
+      const baseAngle = TWO_PI * lane;
+      const gate = inOutSin(tri(frac01(t + phase)));
+      const shimmer = 0.5 + 0.5 * Math.sin(TWO_PI * (t * 2 + phase * 3));
+      const alpha = 7 + gate * 16 + shimmer * 6;
+      const hueShift = 12 * Math.sin(TWO_PI * (t + phase));
+
+      noFill();
+      stroke(
+        (family.color[0] + hueShift + 360) % 360,
+        family.color[1],
+        family.color[2],
+        alpha
+      );
+      strokeWeight(family.weight + gate * 1.25);
+
+      beginShape();
+      for (let j = 0; j <= 76; j++) {
+        const u = j / 76;
+        const taper = Math.sin(Math.PI * u);
+        const waveA = Math.sin(TWO_PI * (u * 2.5 + t * family.dir + phase));
+        const waveB = Math.sin(TWO_PI * (u * 5.0 - t * family.dir + phase * 1.7));
+        const theta = baseAngle
+          + family.twist * (u - 0.5)
+          + 0.145 * waveA * taper
+          + 0.045 * waveB;
+        const radius = lerp(inner, outer, u)
+          + taper * (22 * waveA + 8 * waveB)
+          + 10 * Math.sin(TWO_PI * (t * 2 + phase + u));
+        vertex(Math.cos(theta) * radius, Math.sin(theta) * radius);
+      }
+      endShape();
+    }
+  }
+}
+
+function drawOrbitingBeads(inner, outer, t) {
+  noStroke();
+  for (let i = 0; i < CONFIG.beadCount; i++) {
+    const h1 = hash01(i * 13.71);
+    const h2 = hash01(i * 41.19);
+    const lane = Math.floor(h1 * CONFIG.strandCount);
+    const phase = frac01(h2 + lane / CONFIG.strandCount);
+    const local = frac01(t * (1 + (i % 3)) + phase);
+    const eased = inOutSin(tri(local));
+    const theta = TWO_PI * (lane / CONFIG.strandCount)
+      + 0.32 * Math.sin(TWO_PI * (t + phase))
+      + 0.08 * Math.sin(TWO_PI * (t * 3 + h1));
+    const r = lerp(inner * 0.94, outer * 1.02, eased);
+    const size = lerp(1.2, 4.8, Math.pow(1 - Math.abs(0.5 - local) * 2, 0.7));
+    const palette = i % 5 === 0 ? PALETTE.lime : i % 4 === 0 ? PALETTE.ivory : i % 3 === 0 ? PALETTE.rust : PALETTE.teal;
+    const tail = 0.58 + 0.42 * Math.sin(TWO_PI * (t + phase));
+
+    fill(palette[0], palette[1], palette[2], 18 + tail * 58);
+    ellipse(Math.cos(theta) * r, Math.sin(theta) * r, size, size);
+
+    if (i % 7 === 0) {
+      stroke(palette[0], palette[1] * 0.8, palette[2], 12 + tail * 18);
+      strokeWeight(0.8);
+      const r2 = r - 20 * tail;
+      const theta2 = theta - 0.16 * tail;
+      line(Math.cos(theta2) * r2, Math.sin(theta2) * r2, Math.cos(theta) * r, Math.sin(theta) * r);
+      noStroke();
+    }
+  }
+}
+
+function drawCentralAperture(unit, t) {
+  const baseR = unit * 0.071;
+  const haloR = unit * 0.105;
+
+  for (let layer = 0; layer < 5; layer++) {
+    const layerT = layer / 5;
+    const rot = TWO_PI * (t * (layer % 2 === 0 ? 1 : -1) + layerT);
+    const c = layer % 2 === 0 ? PALETTE.ivory : PALETTE.violet;
+    stroke(c[0], c[1], c[2], 16 - layer * 1.5);
+    strokeWeight(1.2 + layer * 0.45);
+    noFill();
+    beginShape();
+    for (let i = 0; i <= CONFIG.petalCount; i++) {
+      const p = i / CONFIG.petalCount;
+      const petal = Math.sin(TWO_PI * (p * 6 + t * 2 + layerT));
+      const notch = Math.sin(TWO_PI * (p * 13 - t + layerT));
+      const r = baseR + layer * unit * 0.011 + petal * unit * 0.012 + notch * unit * 0.004;
+      const a = TWO_PI * p + rot;
+      vertex(Math.cos(a) * r, Math.sin(a) * r);
+    }
+    endShape(CLOSE);
+  }
+
+  noStroke();
+  for (let i = 0; i < 34; i++) {
+    const phase = i / 34;
+    const pulse = inOutSin(tri(frac01(t + phase)));
+    const a = TWO_PI * (phase + t);
+    const r = haloR + pulse * unit * 0.03;
+    const c = i % 2 === 0 ? PALETTE.amber : PALETTE.magenta;
+    fill(c[0], c[1], c[2], 16 + pulse * 34);
+    ellipse(Math.cos(a) * r, Math.sin(a) * r, 2.4 + pulse * 3.2, 2.4 + pulse * 3.2);
+  }
+
+  fill(232, 30, 7, 72);
+  ellipse(0, 0, baseR * 1.25, baseR * 1.25);
+  fill(44, 18, 94, 68);
+  ellipse(0, 0, baseR * 0.62, baseR * 0.62);
+}
+
+function drawVignette() {
+  const ctx = drawingContext;
+  const g = ctx.createRadialGradient(width * 0.5, height * 0.5, Math.min(width, height) * 0.24, width * 0.5, height * 0.5, Math.max(width, height) * 0.66);
+  g.addColorStop(0.0, 'rgba(0,0,0,0)');
+  g.addColorStop(0.72, 'rgba(0,0,0,0.08)');
+  g.addColorStop(1.0, 'rgba(0,0,0,0.46)');
+  ctx.save();
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, width, height);
+  ctx.restore();
+}
+
+function buildGrainLayer() {
+  grainLayer = createGraphics(width, height);
+  grainLayer.pixelDensity(1);
+  grainLayer.colorMode(HSB, 360, 100, 100, 100);
+  grainLayer.clear();
+  grainLayer.noFill();
+  randomSeed(CONFIG.seed);
+
+  for (let i = 0; i < Math.floor(width * height / 210); i++) {
+    const x = random(width);
+    const y = random(height);
+    const d = random(0.35, 1.25);
+    const hue = random([38, 172, 330, 48]);
+    grainLayer.stroke(hue, random(8, 34), random(70, 100), random(4, 10));
+    grainLayer.strokeWeight(d);
+    grainLayer.point(x, y);
+  }
+}
+
+function timeLoop(nFramesInLoop, offset = 0) {
+  const current = forcedLoopFrame === null ? frameCount - 1 : forcedLoopFrame;
+  return modulo(current + offset, nFramesInLoop) / nFramesInLoop;
+}
+
+function tri(t) {
+  return t < 0.5 ? t * 2 : 2 - t * 2;
+}
+
+function inOutSin(t) {
+  return 0.5 - Math.cos(Math.PI * t) / 2;
+}
+
+function frac01(v) {
+  return v - Math.floor(v);
+}
+
+function modulo(v, m) {
+  return ((v % m) + m) % m;
+}
+
+function hash01(v) {
+  return frac01(Math.sin(v * 127.1 + CONFIG.seed * 0.013) * 43758.5453123);
+}
+
+function keyPressed() {
+  if (key === ' ') {
+    paused = !paused;
+    if (paused) noLoop();
+    else loop();
+  }
+  if (key === 's' || key === 'S') {
+    saveCanvas('star-tide-loom', 'png');
+  }
+  if (key === 'g' || key === 'G') {
+    saveGif('star-tide-loom', CONFIG.loopFrames, { units: 'frames' });
+  }
+  if (key === 'f' || key === 'F') {
+    saveFrames('star-tide-frame', 'png', CONFIG.loopFrames / CONFIG.fps, CONFIG.fps);
+  }
+  if (key === 'r' || key === 'R') {
+    CONFIG.seed = (CONFIG.seed + 104729) % 999999;
+    forcedLoopFrame = null;
+    resetSketch();
+    redraw();
+  }
+}
+
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+  buildGrainLayer();
+}
+</script>
+</body>
+</html>

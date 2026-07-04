@@ -1,0 +1,738 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<link rel="icon" href="data:,">
+<title>图像粒子流场重构</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.11.3/p5.min.js"></script>
+<script>p5.disableFriendlyErrors = true;</script>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; min-height: 100%; background: #07080d; color: #d7dce8; }
+  body {
+    font-family: Inter, "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
+    display: flex;
+    height: 100vh;
+    overflow: hidden;
+  }
+  .sidebar {
+    width: 292px;
+    flex: 0 0 292px;
+    background: linear-gradient(180deg, #11131b 0%, #0b0d13 100%);
+    border-right: 1px solid rgba(220, 229, 255, 0.12);
+    padding: 18px;
+    overflow-y: auto;
+  }
+  h1 {
+    margin: 0 0 6px;
+    font-size: 18px;
+    line-height: 1.25;
+    font-weight: 650;
+    letter-spacing: 0;
+  }
+  .subtitle {
+    margin: 0 0 18px;
+    color: #8d96a8;
+    font-size: 12px;
+    line-height: 1.55;
+  }
+  .section-title {
+    margin: 18px 0 10px;
+    color: #687185;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 700;
+  }
+  .seed-display {
+    height: 42px;
+    display: grid;
+    place-items: center;
+    margin-bottom: 8px;
+    border: 1px solid rgba(160, 180, 215, 0.16);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.045);
+    color: #f4f7ff;
+    font: 700 22px/1 "SF Mono", Menlo, Consolas, monospace;
+  }
+  .row { display: flex; gap: 7px; }
+  .row > * { flex: 1; }
+  button, input {
+    font: inherit;
+  }
+  button {
+    min-height: 31px;
+    border: 1px solid rgba(161, 180, 214, 0.18);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.055);
+    color: #cdd6e8;
+    cursor: pointer;
+  }
+  button:hover { background: rgba(255, 255, 255, 0.09); }
+  button.primary {
+    border-color: rgba(121, 196, 255, 0.38);
+    background: rgba(65, 132, 184, 0.28);
+    color: #eaf6ff;
+  }
+  input[type="number"] {
+    width: 100%;
+    min-width: 0;
+    min-height: 31px;
+    border: 1px solid rgba(161, 180, 214, 0.18);
+    border-radius: 6px;
+    background: rgba(255, 255, 255, 0.045);
+    color: #d7dce8;
+    padding: 0 8px;
+  }
+  .control-group { margin-bottom: 13px; }
+  .control-group label {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 6px;
+    color: #aeb7c8;
+    font-size: 12px;
+  }
+  .value {
+    color: #e9effd;
+    font-family: "SF Mono", Menlo, Consolas, monospace;
+    font-size: 11px;
+  }
+  input[type="range"] {
+    width: 100%;
+    height: 4px;
+    -webkit-appearance: none;
+    appearance: none;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #6ab7ff 0%, #e7eefc 100%);
+    outline: none;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 15px;
+    height: 15px;
+    border-radius: 50%;
+    border: 2px solid #f5f8ff;
+    background: #85c8ff;
+    cursor: pointer;
+    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  }
+  .actions { display: grid; grid-template-columns: 1fr; gap: 8px; }
+  .hint {
+    margin-top: 16px;
+    color: #7b8496;
+    font-size: 11px;
+    line-height: 1.65;
+  }
+  .canvas-area {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+    overflow: hidden;
+    background:
+      radial-gradient(circle at 62% 22%, rgba(92, 154, 210, 0.12), transparent 34%),
+      radial-gradient(circle at 24% 78%, rgba(219, 226, 240, 0.08), transparent 36%),
+      #07080d;
+  }
+  canvas {
+    display: block;
+    border: 1px solid rgba(225, 235, 255, 0.12);
+    border-radius: 8px;
+    box-shadow: 0 26px 80px rgba(0, 0, 0, 0.42);
+  }
+  .status {
+    position: absolute;
+    left: 28px;
+    bottom: 22px;
+    color: rgba(221, 231, 247, 0.62);
+    font: 11px/1.4 "SF Mono", Menlo, Consolas, monospace;
+    pointer-events: none;
+  }
+  @media (max-width: 820px) {
+    body { flex-direction: column; overflow: auto; height: auto; min-height: 100vh; }
+    .sidebar {
+      width: 100%;
+      flex-basis: auto;
+      border-right: 0;
+      border-bottom: 1px solid rgba(220, 229, 255, 0.12);
+      max-height: 48vh;
+    }
+    .canvas-area { min-height: 72vh; padding: 12px; }
+    .status { left: 20px; bottom: 16px; }
+  }
+</style>
+</head>
+<body>
+<aside class="sidebar">
+  <h1>图像粒子流场重构</h1>
+  <p class="subtitle">基于图像边缘切线 + Curl Noise 的交互粒子流。鼠标移动制造局部涡旋，按住拖拽可以补充粒子。</p>
+
+  <div class="section-title">Seed</div>
+  <div class="seed-display" id="seed-display">1207</div>
+  <div class="row">
+    <button onclick="changeSeed(-1)">Prev</button>
+    <button onclick="changeSeed(1)">Next</button>
+    <button onclick="randomizeSeed()">Random</button>
+  </div>
+  <div class="row" style="margin-top: 7px;">
+    <input type="number" id="seed-input" placeholder="seed #" min="0">
+    <button onclick="jumpToSeed()">Go</button>
+  </div>
+
+  <div class="section-title">Flow</div>
+  <div class="control-group">
+    <label>Particles <span class="value" id="particleCount-val">5600</span></label>
+    <input type="range" id="particleCount" min="1800" max="9000" step="200" value="5600" oninput="updateParam('particleCount', +this.value)">
+  </div>
+  <div class="control-group">
+    <label>Noise Scale <span class="value" id="fieldScale-val">0.008</span></label>
+    <input type="range" id="fieldScale" min="0.002" max="0.018" step="0.001" value="0.008" oninput="updateParam('fieldScale', +this.value)">
+  </div>
+  <div class="control-group">
+    <label>Turbulence <span class="value" id="turbulence-val">1.35</span></label>
+    <input type="range" id="turbulence" min="0.2" max="2.4" step="0.05" value="1.35" oninput="updateParam('turbulence', +this.value)">
+  </div>
+  <div class="control-group">
+    <label>Image Pull <span class="value" id="imagePull-val">0.72</span></label>
+    <input type="range" id="imagePull" min="0" max="1.4" step="0.02" value="0.72" oninput="updateParam('imagePull', +this.value)">
+  </div>
+  <div class="control-group">
+    <label>Mouse Force <span class="value" id="mouseForce-val">1.25</span></label>
+    <input type="range" id="mouseForce" min="0" max="3" step="0.05" value="1.25" oninput="updateParam('mouseForce', +this.value)">
+  </div>
+  <div class="control-group">
+    <label>Trace Fade <span class="value" id="traceFade-val">8</span></label>
+    <input type="range" id="traceFade" min="2" max="18" step="1" value="8" oninput="updateParam('traceFade', +this.value)">
+  </div>
+  <div class="control-group">
+    <label>Ghost Reveal <span class="value" id="reveal-val">0.22</span></label>
+    <input type="range" id="reveal" min="0" max="0.55" step="0.01" value="0.22" oninput="updateParam('reveal', +this.value)">
+  </div>
+
+  <div class="section-title">Actions</div>
+  <div class="actions">
+    <button class="primary" onclick="regenerate()">Regenerate</button>
+    <button onclick="resetDefaults()">Reset Defaults</button>
+    <button onclick="downloadPNG()">Download PNG</button>
+  </div>
+  <p class="hint">Space: 暂停 / 继续<br>R: 重新生成当前 seed<br>S: 保存 PNG<br>鼠标移动: 扰动流场<br>拖拽: 注入新的流线粒子</p>
+</aside>
+
+<main class="canvas-area" id="canvas-container">
+  <div class="status" id="status">loading image...</div>
+</main>
+
+<script>
+const DEFAULTS = {
+  seed: 1207,
+  particleCount: 5600,
+  fieldScale: 0.008,
+  turbulence: 1.35,
+  imagePull: 0.72,
+  mouseForce: 1.25,
+  traceFade: 8,
+  reveal: 0.22
+};
+
+let PARAMS = { ...DEFAULTS };
+let sourceImg;
+let imageLayer;
+let ghostLayer;
+let trailLayer;
+let backgroundLayer;
+let luminanceMap;
+let detailMap;
+let gradXMap;
+let gradYMap;
+let field = [];
+let particles = [];
+let spawnPoints = [];
+let fieldCell = 8;
+let fieldCols = 0;
+let fieldRows = 0;
+let paused = false;
+let lastFrameMs = 0;
+const ART_ASPECT = 736 / 1318;
+
+function preload() {
+  sourceImg = loadImage('reference.png');
+}
+
+function setup() {
+  const size = measureCanvas();
+  const cnv = createCanvas(size.w, size.h);
+  cnv.parent('canvas-container');
+  pixelDensity(1);
+  colorMode(HSB, 360, 100, 100, 100);
+  frameRate(60);
+  randomSeed(PARAMS.seed);
+  noiseSeed(PARAMS.seed);
+  rebuildBuffers();
+  initializeArt();
+  window._p5Ready = true;
+}
+
+function draw() {
+  if (paused) {
+    image(backgroundLayer, 0, 0);
+    image(ghostLayer, 0, 0);
+    image(trailLayer, 0, 0);
+    drawCursorField();
+    return;
+  }
+
+  image(backgroundLayer, 0, 0);
+  if (PARAMS.reveal > 0) {
+    push();
+    tint(255, PARAMS.reveal * 255);
+    image(ghostLayer, 0, 0);
+    pop();
+  }
+
+  updateField(frameCount * 0.004);
+  fadeTrail();
+  for (let i = 0; i < particles.length; i++) {
+    particles[i].update();
+    particles[i].draw(trailLayer);
+  }
+  if (mouseIsPressed && isPointerInside()) {
+    injectParticles(mouseX, mouseY, 16);
+  }
+  image(trailLayer, 0, 0);
+  drawCursorField();
+  updateStatus();
+}
+
+function measureCanvas() {
+  const container = document.getElementById('canvas-container');
+  const availableW = Math.max(280, container.clientWidth - 36);
+  const availableH = Math.max(420, container.clientHeight - 36);
+  let h = Math.min(availableH, 1180);
+  let w = h * ART_ASPECT;
+  if (w > availableW) {
+    w = availableW;
+    h = w / ART_ASPECT;
+  }
+  return { w: Math.floor(w), h: Math.floor(h) };
+}
+
+function rebuildBuffers() {
+  imageLayer = createGraphics(width, height);
+  imageLayer.pixelDensity(1);
+  imageLayer.image(sourceImg, 0, 0, width, height);
+  imageLayer.loadPixels();
+
+  luminanceMap = new Float32Array(width * height);
+  detailMap = new Float32Array(width * height);
+  gradXMap = new Float32Array(width * height);
+  gradYMap = new Float32Array(width * height);
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = (x + y * width) * 4;
+      const r = imageLayer.pixels[idx];
+      const g = imageLayer.pixels[idx + 1];
+      const b = imageLayer.pixels[idx + 2];
+      luminanceMap[x + y * width] = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    }
+  }
+
+  spawnPoints = [];
+  const step = Math.max(2, Math.floor(Math.min(width, height) / 190));
+  for (let y = 1; y < height - 1; y++) {
+    for (let x = 1; x < width - 1; x++) {
+      const i = x + y * width;
+      const gx = luminanceMap[x + 1 + y * width] - luminanceMap[x - 1 + y * width];
+      const gy = luminanceMap[x + (y + 1) * width] - luminanceMap[x + (y - 1) * width];
+      const edge = Math.min(1, Math.sqrt(gx * gx + gy * gy) / 70);
+      const shadow = Math.max(0, (252 - luminanceMap[i]) / 105);
+      const figure = Math.min(1, shadow * 0.85 + edge * 1.35);
+      detailMap[i] = Math.pow(figure, 0.72);
+      gradXMap[i] = gx;
+      gradYMap[i] = gy;
+      if (x % step === 0 && y % step === 0 && detailMap[i] > 0.055) {
+        spawnPoints.push({ x, y, w: detailMap[i] });
+      }
+    }
+  }
+
+  fieldCell = Math.max(6, Math.floor(Math.min(width, height) / 82));
+  fieldCols = Math.ceil(width / fieldCell) + 1;
+  fieldRows = Math.ceil(height / fieldCell) + 1;
+  field = new Array(fieldCols * fieldRows);
+
+  trailLayer = createGraphics(width, height);
+  trailLayer.pixelDensity(1);
+  trailLayer.clear();
+
+  ghostLayer = createGraphics(width, height);
+  ghostLayer.pixelDensity(1);
+  buildGhostLayer();
+
+  backgroundLayer = createGraphics(width, height);
+  backgroundLayer.pixelDensity(1);
+  buildBackgroundLayer();
+}
+
+function buildGhostLayer() {
+  ghostLayer.loadPixels();
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const i = x + y * width;
+      const pidx = i * 4;
+      const d = detailMap[i];
+      const lum = luminanceMap[i];
+      const cool = Math.max(0, Math.min(1, (246 - lum) / 130));
+      ghostLayer.pixels[pidx] = 112 + cool * 78;
+      ghostLayer.pixels[pidx + 1] = 128 + cool * 72;
+      ghostLayer.pixels[pidx + 2] = 154 + cool * 74;
+      ghostLayer.pixels[pidx + 3] = Math.min(150, d * 185);
+    }
+  }
+  ghostLayer.updatePixels();
+}
+
+function buildBackgroundLayer() {
+  const g = backgroundLayer;
+  g.colorMode(RGB, 255, 255, 255, 255);
+  g.noStroke();
+  for (let y = 0; y < height; y += 2) {
+    const t = y / Math.max(1, height - 1);
+    const r = 5 + t * 8;
+    const gg = 7 + t * 9;
+    const b = 12 + t * 14;
+    g.fill(r, gg, b, 255);
+    g.rect(0, y, width, 2);
+  }
+  g.blendMode(ADD);
+  for (let i = 0; i < 900; i++) {
+    const x = random(width);
+    const y = random(height);
+    const a = random(5, 20);
+    g.fill(130, 170, 210, a);
+    g.circle(x, y, random(0.35, 1.2));
+  }
+  g.blendMode(BLEND);
+}
+
+function initializeArt() {
+  randomSeed(PARAMS.seed);
+  noiseSeed(PARAMS.seed);
+  if (trailLayer) trailLayer.clear();
+  particles = [];
+  const count = Math.floor(PARAMS.particleCount);
+  for (let i = 0; i < count; i++) {
+    particles.push(new FlowParticle());
+  }
+  updateField(0);
+}
+
+function updateField(time) {
+  for (let row = 0; row < fieldRows; row++) {
+    for (let col = 0; col < fieldCols; col++) {
+      const x = Math.min(width - 1, col * fieldCell);
+      const y = Math.min(height - 1, row * fieldCell);
+      const idx = sampleIndex(x, y);
+      const detail = detailMap[idx] || 0;
+      const gx = gradXMap[idx] || 0;
+      const gy = gradYMap[idx] || 0;
+      const tangentAngle = Math.atan2(gy, gx) + HALF_PI;
+      const warp = noise(x * 0.006 + 8.3, y * 0.006 + 1.7, time * 0.72);
+      const noiseAngle = noise(
+        x * PARAMS.fieldScale + warp * 1.6,
+        y * PARAMS.fieldScale - warp * 1.1,
+        time
+      ) * TWO_PI * (1.6 + PARAMS.turbulence);
+      const imageBlend = Math.min(1, detail * PARAMS.imagePull * 1.65);
+      const wind = -0.22 + 0.28 * noise(y * 0.006, time);
+      let vx = Math.cos(noiseAngle) * PARAMS.turbulence * (1 - imageBlend * 0.42);
+      let vy = Math.sin(noiseAngle) * PARAMS.turbulence * (1 - imageBlend * 0.42);
+      vx += Math.cos(tangentAngle) * imageBlend * 2.1 + wind;
+      vy += Math.sin(tangentAngle) * imageBlend * 2.1 - 0.05;
+      const mag = Math.sqrt(vx * vx + vy * vy) || 1;
+      field[col + row * fieldCols] = { x: vx / mag, y: vy / mag, d: detail };
+    }
+  }
+}
+
+function fadeTrail() {
+  trailLayer.push();
+  trailLayer.colorMode(RGB, 255, 255, 255, 255);
+  trailLayer.noStroke();
+  trailLayer.fill(7, 8, 13, PARAMS.traceFade);
+  trailLayer.rect(0, 0, width, height);
+  trailLayer.pop();
+}
+
+class FlowParticle {
+  constructor(x, y) {
+    this.reset(x, y, true);
+  }
+
+  reset(x, y, first = false) {
+    const sp = Number.isFinite(x) && Number.isFinite(y) ? { x, y, w: 1 } : pickSpawnPoint();
+    this.x = sp.x + random(-2.4, 2.4);
+    this.y = sp.y + random(-2.4, 2.4);
+    this.homeX = sp.x;
+    this.homeY = sp.y;
+    this.prevX = this.x;
+    this.prevY = this.y;
+    const a = random(TWO_PI);
+    const kick = first ? random(0.2, 1.3) : random(0.05, 0.65);
+    this.vx = Math.cos(a) * kick;
+    this.vy = Math.sin(a) * kick;
+    this.life = random(160, 520);
+    this.maxLife = this.life;
+    this.weight = random() < 0.16 ? random(1.15, 1.75) : random(0.38, 0.92);
+    this.speed = random(0.55, 1.55);
+    this.alpha = random(30, 84);
+  }
+
+  update() {
+    this.prevX = this.x;
+    this.prevY = this.y;
+
+    const f = lookupField(this.x, this.y);
+    this.vx += f.x * 0.21 * this.speed;
+    this.vy += f.y * 0.21 * this.speed;
+
+    const detail = sampleDetail(this.x, this.y);
+    const homePull = (0.018 + (1 - detail) * 0.035) * PARAMS.imagePull;
+    this.vx += (this.homeX - this.x) * homePull * 0.018;
+    this.vy += (this.homeY - this.y) * homePull * 0.018;
+
+    if (isPointerInside()) {
+      const dx = this.x - mouseX;
+      const dy = this.y - mouseY;
+      const distSq = dx * dx + dy * dy;
+      const radius = Math.max(width, height) * (mouseIsPressed ? 0.17 : 0.12);
+      if (distSq < radius * radius && distSq > 0.001) {
+        const dist = Math.sqrt(distSq);
+        const falloff = Math.pow(1 - dist / radius, 2);
+        const force = PARAMS.mouseForce * falloff * (mouseIsPressed ? 1.65 : 0.82);
+        this.vx += (-dy / dist) * force;
+        this.vy += (dx / dist) * force;
+        if (mouseIsPressed) {
+          this.vx += (dx / dist) * force * 0.24;
+          this.vy += (dy / dist) * force * 0.24;
+        }
+      }
+    }
+
+    const maxSpeed = 1.25 + PARAMS.turbulence * 1.5 + detail * 1.15;
+    const speedSq = this.vx * this.vx + this.vy * this.vy;
+    if (speedSq > maxSpeed * maxSpeed) {
+      const k = maxSpeed / Math.sqrt(speedSq);
+      this.vx *= k;
+      this.vy *= k;
+    }
+    this.vx *= 0.982;
+    this.vy *= 0.982;
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life--;
+
+    if (this.life < 0 || this.x < -20 || this.x > width + 20 || this.y < -20 || this.y > height + 20) {
+      this.reset();
+    }
+  }
+
+  draw(g) {
+    const c = sampleColor(this.x, this.y);
+    const lifeT = Math.max(0, this.life / this.maxLife);
+    const d = sampleDetail(this.x, this.y);
+    const alpha = this.alpha * (0.25 + d * 0.95) * Math.min(1, lifeT * 3);
+    g.push();
+    g.colorMode(RGB, 255, 255, 255, 255);
+    g.stroke(c.r, c.g, c.b, alpha);
+    g.strokeWeight(this.weight);
+    g.line(this.prevX, this.prevY, this.x, this.y);
+    if (d > 0.35 && random() < 0.03) {
+      g.stroke(180, 220, 255, alpha * 0.75);
+      g.point(this.x + random(-1.5, 1.5), this.y + random(-1.5, 1.5));
+    }
+    g.pop();
+  }
+}
+
+function pickSpawnPoint() {
+  if (!spawnPoints.length) return { x: random(width), y: random(height), w: 1 };
+  for (let tries = 0; tries < 10; tries++) {
+    const sp = random(spawnPoints);
+    if (random() < sp.w) return sp;
+  }
+  return random(spawnPoints);
+}
+
+function injectParticles(x, y, count) {
+  for (let i = 0; i < count; i++) {
+    const p = particles[(frameCount * 17 + i * 31) % particles.length];
+    p.reset(x + random(-10, 10), y + random(-10, 10));
+  }
+}
+
+function lookupField(x, y) {
+  const col = Math.max(0, Math.min(fieldCols - 1, Math.floor(x / fieldCell)));
+  const row = Math.max(0, Math.min(fieldRows - 1, Math.floor(y / fieldCell)));
+  return field[col + row * fieldCols] || { x: 1, y: 0, d: 0 };
+}
+
+function sampleIndex(x, y) {
+  const sx = Math.max(0, Math.min(width - 1, Math.floor(x)));
+  const sy = Math.max(0, Math.min(height - 1, Math.floor(y)));
+  return sx + sy * width;
+}
+
+function sampleDetail(x, y) {
+  return detailMap[sampleIndex(x, y)] || 0;
+}
+
+function sampleColor(x, y) {
+  const i = sampleIndex(x, y);
+  const idx = i * 4;
+  const r = imageLayer.pixels[idx];
+  const g = imageLayer.pixels[idx + 1];
+  const b = imageLayer.pixels[idx + 2];
+  const lum = luminanceMap[i] || 255;
+  const d = detailMap[i] || 0;
+  const skin = r > b + 7 && r > g - 4;
+  const lift = 30 + d * 66;
+  const rr = Math.min(255, r * 0.54 + lift + (skin ? 26 : 0));
+  const gg = Math.min(255, g * 0.56 + lift + (skin ? 12 : 10));
+  const bb = Math.min(255, b * 0.64 + lift + (skin ? 4 : 30));
+  const shadow = Math.max(0, 245 - lum) * 0.32;
+  return {
+    r: Math.max(84, rr - shadow * 0.3),
+    g: Math.max(92, gg - shadow * 0.18),
+    b: Math.max(104, bb + shadow * 0.16)
+  };
+}
+
+function drawCursorField() {
+  if (!isPointerInside()) return;
+  push();
+  noFill();
+  stroke(205, 235, 255, mouseIsPressed ? 34 : 20);
+  strokeWeight(1);
+  const r = Math.max(width, height) * (mouseIsPressed ? 0.17 : 0.12);
+  circle(mouseX, mouseY, r * 2);
+  stroke(122, 195, 255, mouseIsPressed ? 42 : 24);
+  circle(mouseX, mouseY, r * 0.72);
+  pop();
+}
+
+function isPointerInside() {
+  return mouseX >= 0 && mouseX <= width && mouseY >= 0 && mouseY <= height;
+}
+
+function updateStatus() {
+  if (frameCount % 15 !== 0) return;
+  const now = performance.now();
+  const fps = lastFrameMs ? Math.round(15000 / (now - lastFrameMs)) : 0;
+  lastFrameMs = now;
+  const status = document.getElementById('status');
+  status.textContent = `${particles.length} particles · ${fieldCols}x${fieldRows} vectors · ${fps || '--'} fps`;
+}
+
+function changeSeed(delta) {
+  PARAMS.seed = Math.max(0, PARAMS.seed + delta);
+  syncControls();
+  regenerate();
+}
+
+function randomizeSeed() {
+  PARAMS.seed = Math.floor(Math.random() * 99999);
+  syncControls();
+  regenerate();
+}
+
+function jumpToSeed() {
+  const v = parseInt(document.getElementById('seed-input').value, 10);
+  if (!Number.isNaN(v) && v >= 0) {
+    PARAMS.seed = v;
+    document.getElementById('seed-input').value = '';
+    syncControls();
+    regenerate();
+  }
+}
+
+function updateParam(name, value) {
+  PARAMS[name] = value;
+  syncControlValue(name);
+  if (name === 'particleCount') {
+    adjustParticleCount();
+  } else {
+    regenerate();
+  }
+}
+
+function adjustParticleCount() {
+  const target = Math.floor(PARAMS.particleCount);
+  while (particles.length < target) particles.push(new FlowParticle());
+  if (particles.length > target) particles.length = target;
+}
+
+function resetDefaults() {
+  PARAMS = { ...DEFAULTS };
+  syncControls();
+  regenerate();
+}
+
+function regenerate() {
+  randomSeed(PARAMS.seed);
+  noiseSeed(PARAMS.seed);
+  initializeArt();
+}
+
+function downloadPNG() {
+  saveCanvas(`flow-field-portrait-${PARAMS.seed}`, 'png');
+}
+
+function syncControls() {
+  document.getElementById('seed-display').textContent = PARAMS.seed;
+  for (const key of Object.keys(DEFAULTS)) {
+    const el = document.getElementById(key);
+    if (el) el.value = PARAMS[key];
+    syncControlValue(key);
+  }
+}
+
+function syncControlValue(name) {
+  const el = document.getElementById(`${name}-val`);
+  if (!el) return;
+  const value = PARAMS[name];
+  el.textContent = Number.isInteger(value) ? value : value.toFixed(value < 0.1 ? 3 : 2);
+}
+
+function keyPressed() {
+  if (key === ' ') paused = !paused;
+  if (key === 'r' || key === 'R') regenerate();
+  if (key === 's' || key === 'S') downloadPNG();
+  return false;
+}
+
+function mouseDragged() {
+  if (isPointerInside()) injectParticles(mouseX, mouseY, 8);
+  return false;
+}
+
+function touchMoved() {
+  if (touches.length) injectParticles(touches[0].x, touches[0].y, 6);
+  return false;
+}
+
+function windowResized() {
+  const size = measureCanvas();
+  resizeCanvas(size.w, size.h);
+  rebuildBuffers();
+  initializeArt();
+}
+</script>
+</body>
+</html>
