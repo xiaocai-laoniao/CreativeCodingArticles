@@ -39,17 +39,18 @@ const CONFIG = {
   agentDensity: 0.16,
   minAgents: 18000,
   maxAgents: 38000,
-  warmupSteps: 86,
-  stepsPerFrame: 1,
+  warmupSteps: 0,
+  stepsPerFrame: 4,
+  agentActivationTicks: 420,
   sensorDistance: 7.6,
   sensorAngle: 0.70,
   turnAngle: 0.34,
   stepSize: 0.98,
-  deposit: 0.13,
-  decay: 0.946,
-  diffuseMix: 0.12,
+  deposit: 0.11,
+  decay: 0.974,
+  diffuseMix: 0.06,
   nutrientSense: 1.55,
-  maxTrail: 2.45,
+  maxTrail: 1.85,
   mouseFoodRadius: 18,
   mouseFoodStrength: 1.65
 };
@@ -129,9 +130,6 @@ function resetScene() {
   buildEdges();
   setupChemotaxisField();
   renderBackground();
-  renderSporeClouds();
-  renderMyceliumNetwork();
-  seedPulses();
 }
 
 function draw() {
@@ -148,17 +146,13 @@ function draw() {
   blendMode(BLEND);
   image(bgLayer, 0, 0);
   image(hazeLayer, 0, 0);
-  image(sporeLayer, 0, 0);
-  image(fineLayer, 0, 0);
 
   blendMode(ADD);
-  image(veinLayer, 0, 0);
   drawTrailField();
   image(liveLayer, 0, 0);
 
-  drawFlowPulses(t);
+  drawFoodSources(t);
   drawForagerSparkles(t);
-  drawTwinkleSpores(t);
   drawMouseField(t);
   fadeLiveLayer();
 
@@ -543,7 +537,8 @@ function setupChemotaxisField() {
 
   buildNutrientField();
   buildForagers();
-  for (let i = 0; i < CONFIG.warmupSteps; i++) simulateForagers();
+  const previewTicks = getPreviewTicks();
+  for (let i = 0; i < Math.max(CONFIG.warmupSteps, previewTicks); i++) simulateForagers();
 }
 
 function buildNutrientField() {
@@ -565,8 +560,8 @@ function buildNutrientField() {
       paintFieldSpot(
         screenToFieldX(p.x),
         screenToFieldY(p.y),
-        unit * (0.0045 + e.strength * 0.0025),
-        0.12 + e.strength * 0.06,
+        unit * (0.008 + e.strength * 0.003),
+        0.14 + e.strength * 0.07,
         -1
       );
     }
@@ -578,7 +573,6 @@ function buildNutrientField() {
       const idx = row + x;
       const spores = Math.pow(noise(x * 0.029, y * 0.029, CONFIG.seed * 0.0003), 3.2) * 0.20;
       nutrientField[idx] = (nutrientField[idx] + spores) * fieldEdgeMask(x, y);
-      trails[idx % 3][idx] = nutrientField[idx] * 0.050;
     }
   }
 }
@@ -618,8 +612,10 @@ function simulateForagers() {
   const centerX = fieldW * 0.5;
   const centerY = fieldH * 0.5;
   const margin = Math.min(fieldW, fieldH) * 0.024;
+  const activeAgents = currentActiveAgents();
+  const depositRamp = smoothstep(16, CONFIG.agentActivationTicks * 0.65, foragerTick);
 
-  for (let i = 0; i < agentCount; i++) {
+  for (let i = 0; i < activeAgents; i++) {
     const x = foragers.x[i];
     const y = foragers.y[i];
     let angle = foragers.angle[i];
@@ -657,7 +653,7 @@ function simulateForagers() {
 
     const localFood = sampleNutrientField(nx, ny);
     const pulse = 0.82 + 0.18 * Math.sin((foragerTick + i * 7.1) * 0.014);
-    depositForagerTrail(nx, ny, family, CONFIG.deposit * speed * pulse * (0.86 + localFood * 0.10));
+    depositForagerTrail(nx, ny, family, CONFIG.deposit * speed * pulse * (0.36 + depositRamp * 0.78) * (0.86 + localFood * 0.10));
   }
 
   diffuseForagerTrails();
@@ -681,10 +677,10 @@ function depositForagerTrail(x, y, family, amount) {
   if (ix < 1 || iy < 1 || ix >= fieldW - 1 || iy >= fieldH - 1) return;
   const idx = iy * fieldW + ix;
   addForagerTrail(idx, family, amount);
-  addForagerTrail(idx - 1, family, amount * 0.36);
-  addForagerTrail(idx + 1, family, amount * 0.36);
-  addForagerTrail(idx - fieldW, family, amount * 0.36);
-  addForagerTrail(idx + fieldW, family, amount * 0.36);
+  addForagerTrail(idx - 1, family, amount * 0.12);
+  addForagerTrail(idx + 1, family, amount * 0.12);
+  addForagerTrail(idx - fieldW, family, amount * 0.12);
+  addForagerTrail(idx + fieldW, family, amount * 0.12);
 }
 
 function addForagerTrail(idx, family, amount) {
@@ -728,16 +724,16 @@ function drawTrailField() {
   push();
   drawingContext.imageSmoothingEnabled = true;
   blendMode(ADD);
-  drawingContext.filter = 'blur(16px)';
-  tint(0, 0, 100, 28);
+  drawingContext.filter = 'blur(5px)';
+  tint(0, 0, 100, 16);
   image(trailLayer, 0, 0, width, height);
   blendMode(SCREEN);
-  drawingContext.filter = 'blur(4px)';
-  tint(0, 0, 100, 76);
+  drawingContext.filter = 'blur(1px)';
+  tint(0, 0, 100, 58);
   image(trailLayer, 0, 0, width, height);
   blendMode(ADD);
   drawingContext.filter = 'none';
-  tint(0, 0, 100, 128);
+  tint(0, 0, 100, 154);
   image(trailLayer, 0, 0, width, height);
   noTint();
   drawingContext.filter = 'none';
@@ -751,8 +747,7 @@ function updateTrailImage() {
     const b = trails[1][i];
     const c = trails[2][i];
     const total = a + b + c;
-    const food = nutrientField[i] * 0.040;
-    const visible = total * 0.26 + food;
+    const visible = total * 0.38;
 
     if (visible < 0.010) {
       data[p] = 0;
@@ -767,7 +762,7 @@ function updateTrailImage() {
     const lime = b * inv;
     const gold = c * inv;
     const glow = Math.pow(Math.min(1, visible * 0.62), 0.62);
-    const hot = Math.min(1, total * 0.10 + food * 0.42);
+    const hot = Math.min(1, total * 0.14);
 
     let r = 18 * cyan + 122 * lime + 255 * gold;
     let g = 250 * cyan + 255 * lime + 245 * gold;
@@ -780,8 +775,26 @@ function updateTrailImage() {
     data[p] = Math.min(255, r);
     data[p + 1] = Math.min(255, g);
     data[p + 2] = Math.min(255, bl);
-    data[p + 3] = Math.min(198, 8 + glow * 176);
+    data[p + 3] = Math.min(205, 8 + glow * 188);
   }
+}
+
+function drawFoodSources(t) {
+  push();
+  blendMode(ADD);
+  noStroke();
+  for (let i = 0; i < hubs.length; i++) {
+    const h = hubs[i];
+    const pulse = 0.58 + 0.42 * Math.sin(TWO_PI * frac01(t + h.phase));
+    const r = Math.min(width, height) * (0.006 + h.power * 0.004);
+    fill(h.hue, 84, 100, 4 + pulse * 7);
+    ellipse(h.x, h.y, r * 8.0, r * 8.0);
+    fill(h.hue + 12, 66, 100, 18 + pulse * 20);
+    ellipse(h.x, h.y, r * 2.8, r * 2.8);
+    fill(70, 34, 100, 56 + pulse * 28);
+    ellipse(h.x, h.y, r * 0.72, r * 0.72);
+  }
+  pop();
 }
 
 function drawForagerSparkles(t) {
@@ -789,22 +802,35 @@ function drawForagerSparkles(t) {
   push();
   blendMode(ADD);
   strokeWeight(Math.max(0.65, Math.min(width, height) / 1500));
+  const activeAgents = currentActiveAgents();
   const colors = [
-    [176, 62, 100, 42],
-    [82, 82, 100, 34],
-    [54, 84, 100, 30]
+    [176, 62, 100, 62],
+    [82, 82, 100, 48],
+    [54, 84, 100, 42]
   ];
   for (let family = 0; family < 3; family++) {
     const c = colors[family];
     stroke(c[0], c[1], c[2], c[3]);
     beginShape(POINTS);
-    for (let i = family; i < agentCount; i += 19) {
+    for (let i = family; i < activeAgents; i += 9) {
       if (((i + foragerTick) % 7) === 0) continue;
       vertex(fieldToScreenX(foragers.x[i]), fieldToScreenY(foragers.y[i]));
     }
     endShape();
   }
   pop();
+}
+
+function currentActiveAgents() {
+  if (!foragers) return 0;
+  const activation = smoothstep(0, CONFIG.agentActivationTicks, foragerTick);
+  return Math.max(96, Math.min(agentCount, Math.floor(agentCount * activation)));
+}
+
+function getPreviewTicks() {
+  const params = new URLSearchParams(window.location.search);
+  const ticks = Number(params.get('previewTicks') || 0);
+  return Number.isFinite(ticks) ? Math.max(0, Math.min(2200, Math.floor(ticks))) : 0;
 }
 
 function paintFoodField(mx, my, radius, strength) {
@@ -872,17 +898,11 @@ function drawMouseField(t) {
 
 function seedBloom(x, y, force) {
   liveLayer.blendMode(ADD);
-  const count = Math.floor(8 + 10 * force);
   drawRadialBlob(liveLayer, x, y, 56 * force, PALETTE.cyan[0], 72, 100, 22);
-  for (let i = 0; i < count; i++) {
-    const angle = rng() * TWO_PI;
-    const len = Math.min(width, height) * (0.035 + rng() * 0.07) * force;
-    growLiveBranch(x, y, angle, len, 3, 1.6, rng() < 0.5 ? PALETTE.cyan[0] : PALETTE.lime[0]);
-  }
-  for (let i = 0; i < 80 * force; i++) {
+  for (let i = 0; i < 42 * force; i++) {
     const a = rng() * TWO_PI;
-    const r = Math.pow(rng(), 0.38) * 70 * force;
-    drawSpore(liveLayer, x + Math.cos(a) * r, y + Math.sin(a) * r, rng() < 0.45 ? PALETTE.cyan[0] : PALETTE.acid[0], 0.6 + rng() * 2.2, 25 + rng() * 45);
+    const r = Math.pow(rng(), 0.48) * 58 * force;
+    drawSpore(liveLayer, x + Math.cos(a) * r, y + Math.sin(a) * r, rng() < 0.45 ? PALETTE.cyan[0] : PALETTE.acid[0], 0.45 + rng() * 1.5, 18 + rng() * 34);
   }
 }
 
@@ -1097,6 +1117,7 @@ function keyPressed() {
 
 function mousePressed() {
   seedBloom(mouseX, mouseY, 1.2);
+  paintFoodField(mouseX, mouseY, CONFIG.mouseFoodRadius * 1.2, CONFIG.mouseFoodStrength);
 }
 
 function windowResized() {
