@@ -1,0 +1,886 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>p5.js 黏菌模拟：东京脉络培养皿</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.11.3/p5.min.js"></script>
+<script>p5.disableFriendlyErrors = true;</script>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    overflow: hidden;
+    background: #05080a;
+  }
+  canvas {
+    display: block;
+  }
+  .control-panel {
+    position: fixed;
+    top: 16px;
+    right: 16px;
+    z-index: 10;
+    width: min(340px, calc(100vw - 32px));
+    max-height: calc(100vh - 32px);
+    overflow: auto;
+    color: #f5f1d8;
+    border: 1px solid rgba(124, 244, 225, 0.22);
+    border-radius: 8px;
+    background: rgba(5, 12, 13, 0.78);
+    box-shadow: 0 18px 60px rgba(0, 0, 0, 0.34), inset 0 0 0 1px rgba(255,255,255,0.05);
+    backdrop-filter: blur(14px);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  }
+  .control-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 13px 14px 11px;
+    border-bottom: 1px solid rgba(255,255,255,0.10);
+  }
+  .control-title {
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.2;
+    font-weight: 760;
+  }
+  .control-seed {
+    display: block;
+    margin-top: 3px;
+    color: rgba(212, 230, 224, 0.72);
+    font-size: 12px;
+  }
+  .icon-button,
+  .action-button {
+    appearance: none;
+    border: 1px solid rgba(255,255,255,0.16);
+    color: #f6f0d5;
+    background: rgba(255,255,255,0.07);
+    border-radius: 7px;
+    cursor: pointer;
+    font: inherit;
+  }
+  .icon-button {
+    width: 32px;
+    height: 32px;
+    font-size: 20px;
+    line-height: 1;
+  }
+  .control-body {
+    padding: 12px 14px 14px;
+  }
+  .control-panel.is-collapsed .control-body {
+    display: none;
+  }
+  .control-row {
+    display: block;
+    padding: 8px 0 9px;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+  }
+  .control-row:last-child {
+    border-bottom: 0;
+  }
+  .control-meta {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 7px;
+  }
+  .control-label {
+    color: #eaf4ed;
+    font-size: 13px;
+    font-weight: 650;
+  }
+  .control-value {
+    color: #77f0dc;
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+  input[type="range"] {
+    width: 100%;
+    accent-color: #68ead8;
+  }
+  .control-actions {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 12px;
+  }
+  .action-button {
+    min-height: 34px;
+    padding: 0 8px;
+    font-size: 13px;
+  }
+  .action-button:hover,
+  .icon-button:hover {
+    background: rgba(116, 240, 218, 0.15);
+  }
+  @media (max-width: 760px) {
+    .control-panel {
+      top: 10px;
+      right: 10px;
+      width: calc(100vw - 20px);
+      max-height: 48vh;
+    }
+    .control-actions {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+</style>
+</head>
+<body>
+<aside id="control-panel" class="control-panel" aria-label="黏菌参数面板">
+  <div class="control-head">
+    <div>
+      <p class="control-title">黏菌参数</p>
+      <span id="seed-label" class="control-seed"></span>
+    </div>
+    <button id="panel-toggle" class="icon-button" type="button" title="收起参数面板" aria-label="收起参数面板">-</button>
+  </div>
+  <div id="control-body" class="control-body">
+    <div id="control-list"></div>
+    <div class="control-actions">
+      <button id="pause-button" class="action-button" type="button">暂停</button>
+      <button id="reset-button" class="action-button" type="button">重建</button>
+      <button id="reseed-button" class="action-button" type="button">新种子</button>
+      <button id="defaults-button" class="action-button" type="button">默认</button>
+    </div>
+  </div>
+</aside>
+<script>
+const CONFIG = {
+  seed: 271828,
+  fps: 60,
+  fieldScale: 2.5,
+  agentDensity: 0.18,
+  minAgents: 12000,
+  maxAgents: 32000,
+  warmupSteps: 95,
+  stepsPerFrame: 1,
+  sensorDistance: 7.2,
+  sensorAngle: 0.68,
+  turnAngle: 0.31,
+  stepSize: 0.92,
+  deposit: 0.18,
+  decay: 0.946,
+  diffuseMix: 0.13,
+  nutrientSense: 1.38,
+  maxTrail: 3.2,
+  stimulusRadius: 14,
+  stimulusStrength: 1.15
+};
+
+const DEFAULT_CONFIG = { ...CONFIG };
+
+const CONTROL_DEFS = [
+  { key: 'stepsPerFrame', label: '演化速度', min: 0, max: 4, step: 1, format: (v) => `${v} 步/帧` },
+  { key: 'sensorDistance', label: '嗅探距离', min: 3, max: 15, step: 0.1, format: (v) => Number(v).toFixed(1) },
+  { key: 'sensorAngle', label: '嗅探张角', min: 0.22, max: 1.35, step: 0.01, format: (v) => Number(v).toFixed(2) },
+  { key: 'turnAngle', label: '转向力度', min: 0.06, max: 0.82, step: 0.01, format: (v) => Number(v).toFixed(2) },
+  { key: 'stepSize', label: '步长', min: 0.25, max: 1.85, step: 0.01, format: (v) => Number(v).toFixed(2) },
+  { key: 'deposit', label: '留味道', min: 0.03, max: 0.62, step: 0.01, format: (v) => Number(v).toFixed(2) },
+  { key: 'decay', label: '味道保留', min: 0.90, max: 0.988, step: 0.001, format: (v) => `${(Number(v) * 100).toFixed(1)}%` },
+  { key: 'diffuseMix', label: '扩散', min: 0.02, max: 0.38, step: 0.01, format: (v) => Number(v).toFixed(2) },
+  { key: 'nutrientSense', label: '食物吸引', min: 0.30, max: 2.80, step: 0.05, format: (v) => Number(v).toFixed(2) },
+  { key: 'stimulusRadius', label: '鼠标范围', min: 4, max: 36, step: 1, format: (v) => `${v}px` },
+  { key: 'stimulusStrength', label: '鼠标食物', min: 0.10, max: 3.00, step: 0.05, format: (v) => Number(v).toFixed(2) }
+];
+
+const PALETTE = {
+  bgInk: '#05080a',
+  bgGreen: '#071412',
+  bgViolet: '#111020',
+  cyan: [88, 236, 219],
+  amber: [255, 190, 96],
+  rose: [255, 101, 151],
+  violet: [143, 133, 255],
+  jade: [119, 235, 171],
+  ivory: [248, 238, 196]
+};
+
+const SOURCE_TEMPLATE = [
+  { x: 0.33, y: 0.40, r: 0.032, power: 1.45 },
+  { x: 0.45, y: 0.37, r: 0.024, power: 0.90 },
+  { x: 0.55, y: 0.44, r: 0.030, power: 1.25 },
+  { x: 0.62, y: 0.54, r: 0.025, power: 1.05 },
+  { x: 0.50, y: 0.58, r: 0.029, power: 1.20 },
+  { x: 0.42, y: 0.52, r: 0.026, power: 1.10 },
+  { x: 0.70, y: 0.37, r: 0.022, power: 0.82 },
+  { x: 0.72, y: 0.66, r: 0.022, power: 0.86 },
+  { x: 0.27, y: 0.61, r: 0.024, power: 0.92 },
+  { x: 0.57, y: 0.25, r: 0.020, power: 0.72 },
+  { x: 0.38, y: 0.73, r: 0.021, power: 0.76 },
+  { x: 0.82, y: 0.48, r: 0.018, power: 0.62 }
+];
+
+const ROUTES = [
+  [0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 0],
+  [0, 8], [8, 10], [10, 4],
+  [2, 6], [6, 11], [11, 7], [7, 3],
+  [1, 9], [9, 6],
+  [5, 8], [4, 7], [0, 4], [2, 5]
+];
+
+let fieldW;
+let fieldH;
+let fieldCount;
+let agentCount;
+let trails = [];
+let scratch = [];
+let nutrientField;
+let fieldLayer;
+let fieldImage;
+let grainLayer;
+let agents;
+let sources = [];
+let rng;
+let paused = false;
+let simTick = 0;
+let controlsReady = false;
+const controlInputs = {};
+const controlOutputs = {};
+
+function setup() {
+  pixelDensity(1);
+  createCanvas(windowWidth, windowHeight);
+  frameRate(CONFIG.fps);
+  colorMode(HSB, 360, 100, 100, 100);
+  setupControls();
+  resetSimulation();
+}
+
+function resetSimulation() {
+  randomSeed(CONFIG.seed);
+  noiseSeed(CONFIG.seed);
+  rng = mulberry32(CONFIG.seed);
+  simTick = 0;
+
+  fieldW = Math.max(260, Math.floor(width / CONFIG.fieldScale));
+  fieldH = Math.max(180, Math.floor(height / CONFIG.fieldScale));
+  fieldCount = fieldW * fieldH;
+  agentCount = Math.max(CONFIG.minAgents, Math.min(CONFIG.maxAgents, Math.floor(fieldCount * CONFIG.agentDensity)));
+
+  trails = [new Float32Array(fieldCount), new Float32Array(fieldCount), new Float32Array(fieldCount)];
+  scratch = [new Float32Array(fieldCount), new Float32Array(fieldCount), new Float32Array(fieldCount)];
+  nutrientField = new Float32Array(fieldCount);
+  fieldLayer = createGraphics(fieldW, fieldH);
+  fieldLayer.pixelDensity(1);
+  fieldImage = fieldLayer.drawingContext.createImageData(fieldW, fieldH);
+
+  buildSources();
+  buildNutrientField();
+  buildAgents();
+  buildGrainLayer();
+
+  for (let i = 0; i < CONFIG.warmupSteps; i++) {
+    simulateStep();
+  }
+  syncControlLabels();
+}
+
+function draw() {
+  if (!paused) {
+    if (mouseIsPressed && !isPointerOverControls()) {
+      paintStimulus(mouseX, mouseY, CONFIG.stimulusRadius, CONFIG.stimulusStrength);
+    }
+    for (let i = 0; i < CONFIG.stepsPerFrame; i++) simulateStep();
+  }
+
+  drawAtmosphere();
+  drawFieldLayer();
+  drawRouteScaffold();
+  drawAgentSparkles();
+  drawVignette();
+}
+
+function simulateStep() {
+  const centerX = fieldW * 0.5;
+  const centerY = fieldH * 0.5;
+  const margin = Math.min(fieldW, fieldH) * 0.025;
+
+  for (let i = 0; i < agentCount; i++) {
+    const x = agents.x[i];
+    const y = agents.y[i];
+    let a = agents.angle[i];
+    const family = agents.family[i];
+    const speed = agents.speed[i];
+    const sensorDist = CONFIG.sensorDistance * (0.86 + family * 0.12);
+    const sensorAngle = CONFIG.sensorAngle + family * 0.045;
+
+    const f = sampleChemical(x + Math.cos(a) * sensorDist, y + Math.sin(a) * sensorDist);
+    const l = sampleChemical(x + Math.cos(a - sensorAngle) * sensorDist, y + Math.sin(a - sensorAngle) * sensorDist);
+    const r = sampleChemical(x + Math.cos(a + sensorAngle) * sensorDist, y + Math.sin(a + sensorAngle) * sensorDist);
+
+    if (l > f && l > r) {
+      a -= CONFIG.turnAngle * (0.78 + family * 0.12);
+    } else if (r > f && r > l) {
+      a += CONFIG.turnAngle * (0.78 + family * 0.12);
+    } else if (f < l && f < r) {
+      a += (rng() < 0.5 ? -1 : 1) * CONFIG.turnAngle * 0.72;
+    }
+
+    const drift = (valueNoise(x * 0.016, y * 0.016, simTick * 0.003 + agents.drift[i]) - 0.5) * 0.115;
+    a += drift;
+
+    let nx = x + Math.cos(a) * speed * CONFIG.stepSize;
+    let ny = y + Math.sin(a) * speed * CONFIG.stepSize;
+
+    if (nx < margin || nx > fieldW - margin || ny < margin || ny > fieldH - margin) {
+      a = Math.atan2(centerY - y, centerX - x) + randSigned() * 0.95;
+      nx = constrainToField(x + Math.cos(a) * speed * CONFIG.stepSize, fieldW);
+      ny = constrainToField(y + Math.sin(a) * speed * CONFIG.stepSize, fieldH);
+    }
+
+    agents.x[i] = nx;
+    agents.y[i] = ny;
+    agents.angle[i] = wrapAngle(a);
+
+    const pulse = 0.82 + 0.18 * Math.sin((simTick + i * 7.3) * 0.013);
+    depositTrail(nx, ny, family, CONFIG.deposit * speed * pulse);
+  }
+
+  diffuseTrails();
+  simTick++;
+}
+
+function buildSources() {
+  const unit = Math.min(fieldW, fieldH);
+  sources = SOURCE_TEMPLATE.map((s, idx) => ({
+    id: idx,
+    x: s.x * fieldW,
+    y: s.y * fieldH,
+    r: s.r * unit,
+    power: s.power
+  }));
+}
+
+function buildNutrientField() {
+  const unit = Math.min(fieldW, fieldH);
+  for (let y = 0; y < fieldH; y++) {
+    const row = y * fieldW;
+    for (let x = 0; x < fieldW; x++) {
+      let food = 0;
+      for (const s of sources) {
+        const dx = x - s.x;
+        const dy = y - s.y;
+        const falloff = Math.exp(-(dx * dx + dy * dy) / (2 * s.r * s.r));
+        food += falloff * s.power;
+      }
+
+      for (let i = 0; i < ROUTES.length; i++) {
+        const a = sources[ROUTES[i][0]];
+        const b = sources[ROUTES[i][1]];
+        const d = pointSegmentDistance(x, y, a.x, a.y, b.x, b.y);
+        const lane = Math.exp(-(d * d) / (2 * Math.pow(unit * 0.012, 2)));
+        food += lane * (i % 3 === 0 ? 0.32 : 0.22);
+      }
+
+      const heterogeneity = Math.pow(noise(x * 0.032, y * 0.032), 2.5) * 0.22;
+      const edge = edgeMask(x, y);
+      const v = (food + heterogeneity) * edge;
+      const idx = row + x;
+      nutrientField[idx] = v;
+      trails[idx % 3][idx] = v * 0.065;
+    }
+  }
+}
+
+function buildAgents() {
+  agents = {
+    x: new Float32Array(agentCount),
+    y: new Float32Array(agentCount),
+    angle: new Float32Array(agentCount),
+    speed: new Float32Array(agentCount),
+    drift: new Float32Array(agentCount),
+    family: new Uint8Array(agentCount)
+  };
+
+  for (let i = 0; i < agentCount; i++) {
+    const src = sources[Math.floor(rng() * sources.length)];
+    const dst = sources[Math.floor(rng() * sources.length)];
+    const spread = src.r * (1.2 + rng() * 2.8);
+    const x = constrainToField(src.x + randNormal() * spread, fieldW);
+    const y = constrainToField(src.y + randNormal() * spread, fieldH);
+
+    agents.x[i] = x;
+    agents.y[i] = y;
+    agents.angle[i] = Math.atan2(dst.y - y, dst.x - x) + randSigned() * 1.15;
+    agents.speed[i] = 0.72 + rng() * 0.72;
+    agents.drift[i] = rng() * 1000;
+    agents.family[i] = i % 3;
+  }
+}
+
+function drawAtmosphere() {
+  blendMode(BLEND);
+  const ctx = drawingContext;
+  const t = simTick * 0.0035;
+  const cx = width * (0.5 + Math.sin(t * 0.73) * 0.035);
+  const cy = height * (0.5 + Math.cos(t * 0.62) * 0.025);
+  const unit = Math.min(width, height);
+  const g = ctx.createRadialGradient(cx, cy, unit * 0.05, width * 0.5, height * 0.52, Math.max(width, height) * 0.72);
+  g.addColorStop(0.00, '#14312c');
+  g.addColorStop(0.30, PALETTE.bgGreen);
+  g.addColorStop(0.64, PALETTE.bgViolet);
+  g.addColorStop(1.00, PALETTE.bgInk);
+  ctx.save();
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, width, height);
+  ctx.restore();
+
+  image(grainLayer, 0, 0, width, height);
+}
+
+function drawFieldLayer() {
+  updateFieldImage();
+  fieldLayer.drawingContext.putImageData(fieldImage, 0, 0);
+
+  push();
+  blendMode(ADD);
+  drawingContext.imageSmoothingEnabled = true;
+  drawingContext.filter = 'blur(14px)';
+  tint(255, 36);
+  image(fieldLayer, 0, 0, width, height);
+  blendMode(SCREEN);
+  drawingContext.filter = 'blur(4px)';
+  tint(255, 108);
+  image(fieldLayer, 0, 0, width, height);
+  blendMode(BLEND);
+  drawingContext.filter = 'none';
+  tint(255, 214);
+  image(fieldLayer, 0, 0, width, height);
+  noTint();
+  pop();
+}
+
+function drawRouteScaffold() {
+  push();
+  blendMode(ADD);
+  noFill();
+
+  for (let i = 0; i < ROUTES.length; i++) {
+    const a = sources[ROUTES[i][0]];
+    const b = sources[ROUTES[i][1]];
+    const alpha = i % 3 === 0 ? 19 : 11;
+    stroke(43, 35, 94, alpha);
+    strokeWeight(i % 3 === 0 ? 1.15 : 0.62);
+    line(toScreenX(a.x), toScreenY(a.y), toScreenX(b.x), toScreenY(b.y));
+  }
+
+  for (let i = 0; i < sources.length; i++) {
+    const s = sources[i];
+    const sx = toScreenX(s.x);
+    const sy = toScreenY(s.y);
+    const pulse = 0.55 + 0.45 * Math.sin(simTick * 0.025 + i * 1.9);
+    const r = Math.max(5, s.r / fieldW * width * 1.3);
+    stroke(44, 32, 96, 17 + pulse * 24);
+    strokeWeight(1.1);
+    ellipse(sx, sy, r * 2.4, r * 2.4);
+    noStroke();
+    fill(i % 3 === 0 ? 172 : i % 3 === 1 ? 38 : 337, 55, 95, 24 + pulse * 38);
+    ellipse(sx, sy, 3.5 + pulse * 5, 3.5 + pulse * 5);
+  }
+  pop();
+}
+
+function drawAgentSparkles() {
+  push();
+  blendMode(ADD);
+  strokeWeight(Math.max(0.75, Math.min(width, height) / 1300));
+  const colors = [
+    [178, 44, 100, 34],
+    [38, 64, 100, 30],
+    [336, 58, 100, 28]
+  ];
+
+  for (let family = 0; family < 3; family++) {
+    const c = colors[family];
+    stroke(c[0], c[1], c[2], c[3]);
+    beginShape(POINTS);
+    for (let i = family; i < agentCount; i += 27) {
+      vertex(toScreenX(agents.x[i]), toScreenY(agents.y[i]));
+    }
+    endShape();
+  }
+  pop();
+}
+
+function drawVignette() {
+  const ctx = drawingContext;
+  const g = ctx.createRadialGradient(width * 0.5, height * 0.5, Math.min(width, height) * 0.22, width * 0.5, height * 0.5, Math.max(width, height) * 0.68);
+  g.addColorStop(0, 'rgba(0,0,0,0)');
+  g.addColorStop(0.72, 'rgba(0,0,0,0.14)');
+  g.addColorStop(1, 'rgba(0,0,0,0.58)');
+  ctx.save();
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, width, height);
+  ctx.restore();
+}
+
+function updateFieldImage() {
+  const data = fieldImage.data;
+  for (let i = 0, p = 0; i < fieldCount; i++, p += 4) {
+    const a = trails[0][i];
+    const b = trails[1][i];
+    const c = trails[2][i];
+    const total = a + b + c;
+    const food = nutrientField[i] * 0.055;
+    const visible = total * 0.36 + food;
+
+    if (visible < 0.012) {
+      data[p] = 0;
+      data[p + 1] = 0;
+      data[p + 2] = 0;
+      data[p + 3] = 0;
+      continue;
+    }
+
+    const inv = 1 / Math.max(total, 0.0001);
+    const cyan = a * inv;
+    const amber = b * inv;
+    const rose = c * inv;
+    const glow = Math.pow(Math.min(1, visible * 0.92), 0.64);
+    const sourceGlow = Math.min(1, food * 0.52);
+
+    let r = PALETTE.cyan[0] * cyan + PALETTE.amber[0] * amber + PALETTE.rose[0] * rose;
+    let g = PALETTE.cyan[1] * cyan + PALETTE.amber[1] * amber + PALETTE.rose[1] * rose;
+    let bl = PALETTE.cyan[2] * cyan + PALETTE.amber[2] * amber + PALETTE.rose[2] * rose;
+
+    r = r * (0.30 + glow * 0.56) + PALETTE.ivory[0] * sourceGlow * 0.08;
+    g = g * (0.30 + glow * 0.52) + PALETTE.ivory[1] * sourceGlow * 0.07;
+    bl = bl * (0.34 + glow * 0.60) + PALETTE.jade[2] * sourceGlow * 0.06;
+
+    data[p] = Math.min(255, r);
+    data[p + 1] = Math.min(255, g);
+    data[p + 2] = Math.min(255, bl);
+    data[p + 3] = Math.min(228, 10 + glow * 190);
+  }
+}
+
+function diffuseTrails() {
+  const mix = CONFIG.diffuseMix;
+  const keep = 1 - mix;
+  const decay = CONFIG.decay;
+
+  for (let channel = 0; channel < 3; channel++) {
+    const src = trails[channel];
+    const dst = scratch[channel];
+    dst.fill(0);
+
+    for (let y = 1; y < fieldH - 1; y++) {
+      const row = y * fieldW;
+      for (let x = 1; x < fieldW - 1; x++) {
+        const idx = row + x;
+        const cross = src[idx - 1] + src[idx + 1] + src[idx - fieldW] + src[idx + fieldW];
+        const diag = src[idx - fieldW - 1] + src[idx - fieldW + 1] + src[idx + fieldW - 1] + src[idx + fieldW + 1];
+        const avg = (src[idx] * 4 + cross + diag * 0.5) / 10;
+        dst[idx] = (src[idx] * keep + avg * mix) * decay;
+      }
+    }
+
+    trails[channel] = dst;
+    scratch[channel] = src;
+  }
+}
+
+function sampleChemical(x, y) {
+  if (x < 1 || y < 1 || x >= fieldW - 1 || y >= fieldH - 1) return 0;
+  const ix = x | 0;
+  const iy = y | 0;
+  const idx = iy * fieldW + ix;
+  return trails[0][idx] + trails[1][idx] + trails[2][idx] + nutrientField[idx] * CONFIG.nutrientSense;
+}
+
+function depositTrail(x, y, family, amount) {
+  const ix = x | 0;
+  const iy = y | 0;
+  if (ix < 1 || iy < 1 || ix >= fieldW - 1 || iy >= fieldH - 1) return;
+
+  const idx = iy * fieldW + ix;
+  addTrail(idx, family, amount);
+  addTrail(idx - 1, family, amount * 0.35);
+  addTrail(idx + 1, family, amount * 0.35);
+  addTrail(idx - fieldW, family, amount * 0.35);
+  addTrail(idx + fieldW, family, amount * 0.35);
+}
+
+function addTrail(idx, family, amount) {
+  const primary = trails[family];
+  primary[idx] = Math.min(CONFIG.maxTrail, primary[idx] + amount);
+  const neighbor = trails[(family + 1) % 3];
+  neighbor[idx] = Math.min(CONFIG.maxTrail, neighbor[idx] + amount * 0.12);
+}
+
+function paintStimulus(mx, my, radius, strength) {
+  const fx = mx / width * fieldW;
+  const fy = my / height * fieldH;
+  const rr = radius * radius;
+  const minX = Math.max(1, Math.floor(fx - radius));
+  const maxX = Math.min(fieldW - 2, Math.ceil(fx + radius));
+  const minY = Math.max(1, Math.floor(fy - radius));
+  const maxY = Math.min(fieldH - 2, Math.ceil(fy + radius));
+
+  for (let y = minY; y <= maxY; y++) {
+    for (let x = minX; x <= maxX; x++) {
+      const dx = x - fx;
+      const dy = y - fy;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > rr) continue;
+      const falloff = Math.exp(-d2 / (radius * radius * 0.42));
+      const idx = y * fieldW + x;
+      trails[1][idx] = Math.min(CONFIG.maxTrail, trails[1][idx] + strength * falloff);
+      nutrientField[idx] = Math.min(3.8, nutrientField[idx] + strength * 0.018 * falloff);
+    }
+  }
+}
+
+function buildGrainLayer() {
+  grainLayer = createGraphics(width, height);
+  grainLayer.pixelDensity(1);
+  grainLayer.colorMode(HSB, 360, 100, 100, 100);
+  grainLayer.clear();
+  grainLayer.noFill();
+
+  randomSeed(CONFIG.seed + 9001);
+  const specks = Math.floor(width * height / 185);
+  for (let i = 0; i < specks; i++) {
+    const x = random(width);
+    const y = random(height);
+    const hue = random([38, 166, 206, 284]);
+    grainLayer.stroke(hue, random(8, 34), random(42, 96), random(3, 10));
+    grainLayer.strokeWeight(random(0.35, 1.25));
+    grainLayer.point(x, y);
+  }
+
+  const unit = Math.min(width, height);
+  for (let i = 0; i < 34; i++) {
+    grainLayer.stroke(178, 22, 74, 2.2);
+    grainLayer.strokeWeight(0.6);
+    const y = random(height);
+    grainLayer.line(width * random(-0.05, 0.1), y, width * random(0.85, 1.08), y + random(-unit * 0.16, unit * 0.16));
+  }
+}
+
+function edgeMask(x, y) {
+  const edge = Math.min(x, y, fieldW - 1 - x, fieldH - 1 - y);
+  return smoothstep(2, Math.min(fieldW, fieldH) * 0.065, edge);
+}
+
+function pointSegmentDistance(px, py, ax, ay, bx, by) {
+  const vx = bx - ax;
+  const vy = by - ay;
+  const wx = px - ax;
+  const wy = py - ay;
+  const len2 = vx * vx + vy * vy;
+  const t = Math.max(0, Math.min(1, (wx * vx + wy * vy) / len2));
+  const dx = px - (ax + vx * t);
+  const dy = py - (ay + vy * t);
+  return Math.sqrt(dx * dx + dy * dy);
+}
+
+function valueNoise(x, y, z) {
+  return noise(x, y, z);
+}
+
+function smoothstep(a, b, v) {
+  const t = Math.max(0, Math.min(1, (v - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+
+function toScreenX(x) {
+  return x / fieldW * width;
+}
+
+function toScreenY(y) {
+  return y / fieldH * height;
+}
+
+function constrainToField(v, maxValue) {
+  return Math.max(1, Math.min(maxValue - 2, v));
+}
+
+function wrapAngle(a) {
+  if (a > Math.PI) return a - Math.PI * 2;
+  if (a < -Math.PI) return a + Math.PI * 2;
+  return a;
+}
+
+function randSigned() {
+  return rng() * 2 - 1;
+}
+
+function randNormal() {
+  const u = Math.max(0.000001, rng());
+  const v = Math.max(0.000001, rng());
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(Math.PI * 2 * v);
+}
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function next() {
+    a += 0x6D2B79F5;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function setupControls() {
+  if (controlsReady) return;
+  const panel = document.getElementById('control-panel');
+  const list = document.getElementById('control-list');
+  const toggle = document.getElementById('panel-toggle');
+  const pauseButton = document.getElementById('pause-button');
+  const resetButton = document.getElementById('reset-button');
+  const reseedButton = document.getElementById('reseed-button');
+  const defaultsButton = document.getElementById('defaults-button');
+
+  for (const def of CONTROL_DEFS) {
+    const row = document.createElement('label');
+    row.className = 'control-row';
+
+    const meta = document.createElement('span');
+    meta.className = 'control-meta';
+
+    const label = document.createElement('span');
+    label.className = 'control-label';
+    label.textContent = def.label;
+
+    const output = document.createElement('output');
+    output.className = 'control-value';
+
+    const input = document.createElement('input');
+    input.type = 'range';
+    input.min = def.min;
+    input.max = def.max;
+    input.step = def.step;
+    input.value = CONFIG[def.key];
+    input.setAttribute('aria-label', def.label);
+
+    input.addEventListener('input', () => {
+      const nextValue = def.step === 1 ? Math.round(Number(input.value)) : Number(input.value);
+      CONFIG[def.key] = nextValue;
+      input.value = nextValue;
+      updateControlValue(def);
+    });
+
+    meta.appendChild(label);
+    meta.appendChild(output);
+    row.appendChild(meta);
+    row.appendChild(input);
+    list.appendChild(row);
+
+    controlInputs[def.key] = input;
+    controlOutputs[def.key] = output;
+  }
+
+  toggle.addEventListener('click', () => {
+    const collapsed = panel.classList.toggle('is-collapsed');
+    toggle.textContent = collapsed ? '+' : '-';
+    toggle.title = collapsed ? '展开参数面板' : '收起参数面板';
+    toggle.setAttribute('aria-label', toggle.title);
+  });
+
+  pauseButton.addEventListener('click', () => {
+    paused = !paused;
+    syncPauseButton();
+  });
+
+  resetButton.addEventListener('click', () => {
+    paused = false;
+    resetSimulation();
+    syncPauseButton();
+  });
+
+  reseedButton.addEventListener('click', () => {
+    CONFIG.seed = (CONFIG.seed + 104729) % 1000000;
+    paused = false;
+    resetSimulation();
+    syncPauseButton();
+  });
+
+  defaultsButton.addEventListener('click', () => {
+    Object.assign(CONFIG, DEFAULT_CONFIG);
+    syncControlInputs();
+    paused = false;
+    resetSimulation();
+    syncPauseButton();
+  });
+
+  syncControlInputs();
+  controlsReady = true;
+}
+
+function syncControlInputs() {
+  for (const def of CONTROL_DEFS) {
+    if (!controlInputs[def.key]) continue;
+    controlInputs[def.key].value = CONFIG[def.key];
+    updateControlValue(def);
+  }
+  syncControlLabels();
+}
+
+function syncControlLabels() {
+  const seedLabel = document.getElementById('seed-label');
+  if (seedLabel) seedLabel.textContent = `seed ${CONFIG.seed} | ${agentCount || 0} agents`;
+  syncPauseButton();
+}
+
+function updateControlValue(def) {
+  const output = controlOutputs[def.key];
+  if (!output) return;
+  output.textContent = def.format ? def.format(CONFIG[def.key]) : CONFIG[def.key];
+}
+
+function syncPauseButton() {
+  const pauseButton = document.getElementById('pause-button');
+  if (pauseButton) pauseButton.textContent = paused ? '继续' : '暂停';
+}
+
+function isPointerOverControls() {
+  const panel = document.getElementById('control-panel');
+  if (!panel) return false;
+  const rect = panel.getBoundingClientRect();
+  return mouseX >= rect.left && mouseX <= rect.right && mouseY >= rect.top && mouseY <= rect.bottom;
+}
+
+function isControlFocused() {
+  const active = document.activeElement;
+  return Boolean(active && active.closest && active.closest('#control-panel'));
+}
+
+function keyPressed() {
+  if (isControlFocused()) return;
+  if (key === ' ') {
+    paused = !paused;
+    syncPauseButton();
+  }
+  if (key === 's' || key === 'S') {
+    saveCanvas('physarum-tokyo-culture', 'png');
+  }
+  if (key === 'g' || key === 'G') {
+    saveGif('physarum-tokyo-culture', 8);
+  }
+  if (key === 'f' || key === 'F') {
+    saveFrames('physarum-frame', 'png', 6, CONFIG.fps);
+  }
+  if (key === 'r' || key === 'R') {
+    CONFIG.seed = (CONFIG.seed + 104729) % 1000000;
+    paused = false;
+    resetSimulation();
+    syncPauseButton();
+  }
+}
+
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+  resetSimulation();
+}
+</script>
+</body>
+</html>

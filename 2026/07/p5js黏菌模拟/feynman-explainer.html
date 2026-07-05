@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>黏菌算法费曼图解</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    width: 1600px;
+    height: 1280px;
+    overflow: hidden;
+    background: #07100f;
+    color: #f5f1d8;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+  }
+  .poster {
+    position: relative;
+    width: 1600px;
+    height: 1280px;
+    padding: 62px 70px 54px;
+    background:
+      radial-gradient(circle at 24% 22%, rgba(74, 231, 209, 0.17), transparent 28%),
+      radial-gradient(circle at 80% 20%, rgba(255, 116, 166, 0.13), transparent 28%),
+      radial-gradient(circle at 58% 78%, rgba(255, 194, 91, 0.12), transparent 31%),
+      linear-gradient(135deg, #081312 0%, #0c1019 52%, #07090e 100%);
+  }
+  .poster::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background-image:
+      radial-gradient(rgba(255,255,255,0.09) 0.7px, transparent 0.7px),
+      linear-gradient(rgba(255,255,255,0.024) 1px, transparent 1px);
+    background-size: 18px 18px, 100% 56px;
+    opacity: 0.35;
+    mix-blend-mode: screen;
+  }
+  .header {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: 1fr 420px;
+    gap: 28px;
+    align-items: end;
+    margin-bottom: 34px;
+  }
+  h1 {
+    margin: 0;
+    font-size: 62px;
+    line-height: 1.05;
+    letter-spacing: 0;
+    font-weight: 820;
+  }
+  .subtitle {
+    margin-top: 16px;
+    font-size: 25px;
+    line-height: 1.45;
+    color: #c7d9d3;
+  }
+  .formula {
+    padding: 22px 24px;
+    border: 1px solid rgba(255,255,255,0.16);
+    border-radius: 8px;
+    background: rgba(8, 17, 19, 0.68);
+    box-shadow: inset 0 0 0 1px rgba(116, 236, 214, 0.08);
+  }
+  .formula-title {
+    color: #6df0dc;
+    font-size: 22px;
+    margin-bottom: 10px;
+    font-weight: 760;
+  }
+  .formula-body {
+    font-size: 26px;
+    line-height: 1.5;
+    color: #fff6d9;
+  }
+  .grid {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 18px;
+  }
+  .card {
+    min-height: 660px;
+    padding: 22px 18px 18px;
+    border: 1px solid rgba(255,255,255,0.14);
+    border-radius: 8px;
+    background: rgba(4, 12, 14, 0.68);
+    box-shadow:
+      0 18px 50px rgba(0,0,0,0.23),
+      inset 0 0 0 1px rgba(255,255,255,0.04);
+  }
+  .step {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: #ffe29a;
+    color: #1a1610;
+    font-size: 22px;
+    font-weight: 850;
+    margin-bottom: 12px;
+  }
+  h2 {
+    margin: 0 0 10px;
+    font-size: 30px;
+    line-height: 1.16;
+    letter-spacing: 0;
+  }
+  .explain {
+    min-height: 94px;
+    margin: 0 0 12px;
+    color: #cfe1dc;
+    font-size: 21px;
+    line-height: 1.38;
+  }
+  svg {
+    width: 100%;
+    height: 370px;
+    display: block;
+  }
+  .caption {
+    margin-top: 12px;
+    padding: 13px 14px;
+    border-left: 4px solid #67eed8;
+    background: rgba(103, 238, 216, 0.08);
+    color: #f7f0d1;
+    font-size: 20px;
+    line-height: 1.42;
+  }
+  .bottom {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: 1.04fr 0.96fr;
+    gap: 18px;
+    margin-top: 18px;
+  }
+  .lesson {
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.16);
+    background: rgba(255, 232, 160, 0.10);
+    padding: 24px 28px;
+    font-size: 27px;
+    line-height: 1.45;
+    color: #fff2c2;
+  }
+  .tokyo {
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.16);
+    background: rgba(100, 239, 218, 0.08);
+    padding: 24px 28px;
+    font-size: 25px;
+    line-height: 1.45;
+    color: #d9fff7;
+  }
+  .small {
+    color: #abc1bb;
+    font-size: 19px;
+  }
+</style>
+</head>
+<body>
+<main class="poster">
+  <section class="header">
+    <div>
+      <h1>黏菌算法，像一群会闻味道的小点</h1>
+      <div class="subtitle">费曼版：别先想“复杂数学”。只记住一件事：好路越走越香，没人走的路会慢慢消失。</div>
+    </div>
+    <div class="formula">
+      <div class="formula-title">核心循环</div>
+      <div class="formula-body">闻一闻 → 转个弯 → 走一步 → 留味道 → 味道变淡</div>
+    </div>
+  </section>
+
+  <section class="grid">
+    <article class="card">
+      <div class="step">1</div>
+      <h2>先放食物点</h2>
+      <p class="explain">燕麦片像城市，越重要的城市越“香”。黏菌从某处出发，开始找吃的。</p>
+      <svg viewBox="0 0 250 370" aria-label="食物点">
+        <defs>
+          <radialGradient id="foodGlow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#fff5ba"/>
+            <stop offset="45%" stop-color="#ffc46d"/>
+            <stop offset="100%" stop-color="#ffb66a" stop-opacity="0"/>
+          </radialGradient>
+          <filter id="soft"><feGaussianBlur stdDeviation="4"/></filter>
+        </defs>
+        <rect x="8" y="12" width="234" height="330" rx="24" fill="#0a1718" stroke="#24403e"/>
+        <circle cx="74" cy="92" r="38" fill="url(#foodGlow)" opacity="0.86"/>
+        <circle cx="170" cy="124" r="29" fill="url(#foodGlow)" opacity="0.82"/>
+        <circle cx="104" cy="226" r="32" fill="url(#foodGlow)" opacity="0.86"/>
+        <circle cx="185" cy="262" r="24" fill="url(#foodGlow)" opacity="0.78"/>
+        <circle cx="74" cy="92" r="6" fill="#fff8d7"/>
+        <circle cx="170" cy="124" r="5" fill="#fff8d7"/>
+        <circle cx="104" cy="226" r="6" fill="#fff8d7"/>
+        <circle cx="185" cy="262" r="5" fill="#fff8d7"/>
+        <g fill="#6df0dc" opacity="0.8">
+          <circle cx="122" cy="166" r="3"/>
+          <circle cx="135" cy="175" r="3"/>
+          <circle cx="113" cy="182" r="2.5"/>
+          <circle cx="130" cy="194" r="2.5"/>
+          <circle cx="96" cy="160" r="2.5"/>
+        </g>
+      </svg>
+      <div class="caption">不是先画路线，只是放目标。</div>
+    </article>
+
+    <article class="card">
+      <div class="step">2</div>
+      <h2>每个小点有三个鼻子</h2>
+      <p class="explain">它看左前、正前、右前三个方向：哪边味道更浓，就准备往哪边转。</p>
+      <svg viewBox="0 0 250 370" aria-label="三个传感器">
+        <rect x="8" y="12" width="234" height="330" rx="24" fill="#0a1718" stroke="#24403e"/>
+        <g transform="translate(125 215)">
+          <path d="M0 0 L-58 -116" stroke="#ff8fb5" stroke-width="5" stroke-linecap="round" opacity="0.9"/>
+          <path d="M0 0 L0 -132" stroke="#ffe29a" stroke-width="7" stroke-linecap="round" opacity="0.95"/>
+          <path d="M0 0 L58 -116" stroke="#6df0dc" stroke-width="5" stroke-linecap="round" opacity="0.9"/>
+          <circle cx="-58" cy="-116" r="15" fill="#ff8fb5"/>
+          <circle cx="0" cy="-132" r="18" fill="#ffe29a"/>
+          <circle cx="58" cy="-116" r="15" fill="#6df0dc"/>
+          <path d="M-22 22 L0 -34 L22 22 Z" fill="#f8f2c9" stroke="#ffffff" stroke-width="2"/>
+          <circle cx="0" cy="0" r="14" fill="#67eed8"/>
+        </g>
+        <text x="66" y="84" fill="#ffbad0" font-size="21" font-weight="700">左</text>
+        <text x="112" y="57" fill="#fff1b0" font-size="21" font-weight="700">前</text>
+        <text x="169" y="84" fill="#b5fff5" font-size="21" font-weight="700">右</text>
+      </svg>
+      <div class="caption">它不聪明，只会比较三个数字。</div>
+    </article>
+
+    <article class="card">
+      <div class="step">3</div>
+      <h2>往更香的地方走</h2>
+      <p class="explain">走过的地方会留下信息素，就像地上多了一条淡淡的发光脚印。</p>
+      <svg viewBox="0 0 250 370" aria-label="移动并留下味道">
+        <rect x="8" y="12" width="234" height="330" rx="24" fill="#0a1718" stroke="#24403e"/>
+        <path d="M48 286 C74 250, 88 236, 101 204 S136 144, 181 96" fill="none" stroke="#6df0dc" stroke-width="14" stroke-linecap="round" opacity="0.16"/>
+        <path d="M48 286 C74 250, 88 236, 101 204 S136 144, 181 96" fill="none" stroke="#6df0dc" stroke-width="6" stroke-linecap="round" opacity="0.92"/>
+        <path d="M158 100 L184 91 L177 118" fill="none" stroke="#fff5bb" stroke-width="7" stroke-linecap="round" stroke-linejoin="round"/>
+        <g opacity="0.95">
+          <circle cx="48" cy="286" r="5" fill="#ffe29a"/>
+          <circle cx="72" cy="252" r="5" fill="#ffe29a"/>
+          <circle cx="101" cy="204" r="5" fill="#ffe29a"/>
+          <circle cx="127" cy="158" r="5" fill="#ffe29a"/>
+        </g>
+        <circle cx="181" cy="96" r="18" fill="#fff3bd"/>
+      </svg>
+      <div class="caption">路径不是画出来的，是踩出来的。</div>
+    </article>
+
+    <article class="card">
+      <div class="step">4</div>
+      <h2>常走的路变亮</h2>
+      <p class="explain">更多小点闻到脚印，就会跟过去。没人走的味道会扩散、变淡。</p>
+      <svg viewBox="0 0 250 370" aria-label="强化和衰减">
+        <rect x="8" y="12" width="234" height="330" rx="24" fill="#0a1718" stroke="#24403e"/>
+        <path d="M44 282 C78 226, 101 206, 125 174 S169 114, 205 78" fill="none" stroke="#fff3bd" stroke-width="26" stroke-linecap="round" opacity="0.16"/>
+        <path d="M44 282 C78 226, 101 206, 125 174 S169 114, 205 78" fill="none" stroke="#ffd37d" stroke-width="10" stroke-linecap="round" opacity="0.96"/>
+        <path d="M49 102 C92 134, 103 167, 116 209" fill="none" stroke="#ff8fb5" stroke-width="5" stroke-linecap="round" opacity="0.22"/>
+        <path d="M198 267 C160 238, 145 213, 130 179" fill="none" stroke="#6df0dc" stroke-width="5" stroke-linecap="round" opacity="0.22"/>
+        <g fill="#67eed8">
+          <circle cx="82" cy="224" r="4"/>
+          <circle cx="99" cy="203" r="4"/>
+          <circle cx="116" cy="181" r="4"/>
+          <circle cx="138" cy="154" r="4"/>
+          <circle cx="158" cy="129" r="4"/>
+        </g>
+      </svg>
+      <div class="caption">强化：越有用越粗。衰减：没用就消失。</div>
+    </article>
+
+    <article class="card">
+      <div class="step">5</div>
+      <h2>最后像地铁网络</h2>
+      <p class="explain">留下来的不是最短一条线，而是又省路、又不太绕、还留一点备用路。</p>
+      <svg viewBox="0 0 250 370" aria-label="地铁网络">
+        <rect x="8" y="12" width="234" height="330" rx="24" fill="#0a1718" stroke="#24403e"/>
+        <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M47 240 L82 146 L126 177 L176 111 L207 216 L154 266 L93 254 Z" stroke="#ff8fb5" stroke-width="12" opacity="0.34"/>
+          <path d="M47 240 L82 146 L126 177 L176 111 L207 216 L154 266 L93 254 Z" stroke="#ff8fb5" stroke-width="4.5"/>
+          <path d="M82 146 L154 266 M47 240 L176 111 M126 177 L207 216" stroke="#ffe29a" stroke-width="4.5"/>
+          <path d="M82 146 C88 91, 145 79, 176 111 M207 216 C223 260, 180 302, 154 266" stroke="#6df0dc" stroke-width="4.5" opacity="0.72"/>
+        </g>
+        <g>
+          <circle cx="47" cy="240" r="12" fill="#ffe29a"/>
+          <circle cx="82" cy="146" r="13" fill="#6df0dc"/>
+          <circle cx="126" cy="177" r="10" fill="#fff5c8"/>
+          <circle cx="176" cy="111" r="13" fill="#ff8fb5"/>
+          <circle cx="207" cy="216" r="12" fill="#ffe29a"/>
+          <circle cx="154" cy="266" r="12" fill="#6df0dc"/>
+          <circle cx="93" cy="254" r="9" fill="#fff5c8"/>
+        </g>
+      </svg>
+      <div class="caption">东京实验：黏菌长出的网络和铁路有相似折中。</div>
+    </article>
+  </section>
+
+  <section class="bottom">
+    <div class="lesson">
+      <strong>小学生类比：</strong>操场上大家都从教室走到食堂。常被踩的草地会变成清楚小路；没人走的地方，草又长回来。黏菌算法也是这样。
+    </div>
+    <div class="tokyo">
+      <strong>和东京地铁的关系：</strong>地铁也要在三件事中折中：线路别太长、乘客别太绕、一条路坏了还有别的路。黏菌靠简单规则，也会长出类似这种折中网络。<br>
+      <span class="small">关键词：成本低、效率高、有备用路。</span>
+    </div>
+  </section>
+</main>
+</body>
+</html>

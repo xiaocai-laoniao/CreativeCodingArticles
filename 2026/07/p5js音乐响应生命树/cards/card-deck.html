@@ -1,0 +1,581 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>音乐响应生命树实现过程卡片</title>
+<style>
+  :root {
+    --pg: #f5f4ed;
+    --iv: #faf9f5;
+    --nk: #141413;
+    --ds: #30302e;
+    --tc: #c96442;
+    --og: #5e5d59;
+    --sg: #87867f;
+    --bc: #f0eee6;
+    --bw: #e8e6dc;
+    --ws: #b0aea5;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    background: var(--pg);
+    color: var(--nk);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  }
+
+  body {
+    display: grid;
+    place-items: center;
+  }
+
+  .card {
+    position: relative;
+    width: 1080px;
+    height: 1440px;
+    overflow: hidden;
+    background: var(--iv);
+    box-shadow: 0px 0px 0px 1px rgba(0,0,0,0.08);
+  }
+
+  .grain {
+    position: absolute;
+    inset: 0;
+    opacity: 0.72;
+    pointer-events: none;
+    background:
+      radial-gradient(circle at 18% 14%, var(--bc) 0 1px, transparent 1px 9px),
+      linear-gradient(90deg, transparent 0 23px, var(--bc) 23px 24px, transparent 24px 48px);
+  }
+
+  .cover {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    grid-template-rows: 176px 1fr 172px;
+    padding: 78px 82px 64px;
+  }
+
+  .topline,
+  .footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    color: var(--og);
+    font-size: 18px;
+    letter-spacing: 0;
+  }
+
+  .kicker {
+    color: var(--tc);
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  .folio {
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 56px;
+    font-weight: 500;
+    color: var(--nk);
+    letter-spacing: 0;
+  }
+
+  .main {
+    display: grid;
+    grid-template-columns: 1fr;
+    align-content: start;
+    gap: 34px;
+  }
+
+  .title {
+    margin: 0;
+    max-width: 900px;
+    font-family: Georgia, "Times New Roman", "Songti SC", serif;
+    font-size: 72px;
+    line-height: 1.05;
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+
+  .subtitle {
+    max-width: 820px;
+    margin: 0;
+    color: var(--og);
+    font-size: 29px;
+    line-height: 1.52;
+    letter-spacing: 0;
+  }
+
+  .rule {
+    width: 228px;
+    height: 18px;
+  }
+
+  .content-grid {
+    display: grid;
+    grid-template-columns: 1.02fr 0.78fr;
+    gap: 36px;
+    align-items: start;
+  }
+
+  .points {
+    display: grid;
+    gap: 18px;
+  }
+
+  .point {
+    padding: 22px 24px;
+    background: var(--pg);
+    border: 1px solid var(--bw);
+    box-shadow: 0px 0px 0px 1px rgba(0,0,0,0.04);
+  }
+
+  .point b {
+    display: block;
+    margin-bottom: 7px;
+    color: var(--nk);
+    font-size: 24px;
+    line-height: 1.32;
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+
+  .point span {
+    display: block;
+    color: var(--og);
+    font-size: 22px;
+    line-height: 1.52;
+    letter-spacing: 0;
+  }
+
+  .aside {
+    min-height: 530px;
+    padding: 30px 28px;
+    color: var(--iv);
+    background: var(--ds);
+    border: 1px solid var(--ds);
+    box-shadow: 0px 0px 0px 1px rgba(0,0,0,0.08);
+  }
+
+  .aside .label {
+    margin-bottom: 20px;
+    color: var(--ws);
+    font-size: 9px;
+    font-weight: 500;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+  }
+
+  .aside .big {
+    margin: 0 0 22px;
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 72px;
+    line-height: 0.95;
+    font-weight: 500;
+    color: var(--iv);
+  }
+
+  .aside p {
+    margin: 0;
+    color: var(--ws);
+    font-size: 22px;
+    line-height: 1.56;
+  }
+
+  .diagram {
+    width: 100%;
+    height: 260px;
+    margin-top: 34px;
+  }
+
+  .quote {
+    position: relative;
+    margin-top: 12px;
+    padding: 28px 30px 30px;
+    border-left: 4px solid var(--tc);
+    background: var(--pg);
+    color: var(--nk);
+    font-family: Georgia, "Times New Roman", "Songti SC", serif;
+    font-size: 32px;
+    line-height: 1.42;
+    font-weight: 500;
+  }
+
+  .quote svg {
+    position: absolute;
+    left: 12px;
+    top: -16px;
+    z-index: 0;
+  }
+
+  .quote span {
+    position: relative;
+    z-index: 1;
+  }
+
+  .footer {
+    align-items: end;
+    border-top: 1px solid var(--bw);
+    padding-top: 22px;
+  }
+
+  .footer strong {
+    display: block;
+    color: var(--nk);
+    font-size: 19px;
+    font-weight: 500;
+  }
+
+  .footer span {
+    color: var(--sg);
+    font-size: 17px;
+  }
+
+  .save {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    border: 1px solid var(--bw);
+    background: var(--iv);
+    color: var(--nk);
+    padding: 10px 12px;
+    font: 500 13px/1 -apple-system, system-ui, sans-serif;
+  }
+
+  .shot .save {
+    display: none;
+  }
+
+  @media print {
+    .save { display: none; }
+  }
+</style>
+</head>
+<body>
+<article class="card" id="card">
+  <div class="grain" aria-hidden="true"></div>
+  <section class="cover">
+    <header class="topline">
+      <div>
+        <div class="kicker" id="kicker"></div>
+        <div id="series"></div>
+      </div>
+      <div class="folio" id="folio"></div>
+    </header>
+
+    <main class="main">
+      <svg class="rule" viewBox="0 0 228 18" aria-hidden="true">
+        <line x1="0" y1="9" x2="88" y2="9" stroke="#b0aea5" stroke-width="0.8"/>
+        <circle cx="114" cy="9" r="4" fill="#c96442"/>
+        <path d="M103 9 L114 2 L125 9 L114 16 Z" fill="none" stroke="#c96442" stroke-width="0.8"/>
+        <line x1="140" y1="9" x2="228" y2="9" stroke="#b0aea5" stroke-width="0.8"/>
+      </svg>
+
+      <h1 class="title" id="title"></h1>
+      <p class="subtitle" id="subtitle"></p>
+
+      <div class="content-grid">
+        <section class="points" id="points"></section>
+        <aside class="aside">
+          <div class="label" id="asideLabel"></div>
+          <p class="big" id="asideBig"></p>
+          <p id="asideText"></p>
+          <svg class="diagram" id="diagram" viewBox="0 0 320 260" aria-hidden="true"></svg>
+        </aside>
+      </div>
+
+      <blockquote class="quote">
+        <svg width="100" height="86" viewBox="0 0 100 86" aria-hidden="true">
+          <text x="0" y="72" font-family="Georgia, 'Times New Roman', serif" font-size="94" fill="#c96442" opacity="0.08">“</text>
+        </svg>
+        <span id="quote"></span>
+      </blockquote>
+    </main>
+
+    <footer class="footer">
+      <div>
+        <strong id="footerTitle"></strong>
+        <span id="footerNote"></span>
+      </div>
+      <div id="footerMeta"></div>
+    </footer>
+  </section>
+</article>
+<button class="save" onclick="window.print()">Save / Print</button>
+
+<script>
+if (new URLSearchParams(window.location.search).has("shot")) {
+  document.documentElement.classList.add("shot");
+}
+
+const cards = [
+  {
+    kicker: "Card 01",
+    series: "Creative Coding Build Log",
+    title: "先把主题翻译成一个可运行的生命系统",
+    subtitle: "目标不是画一棵漂亮的树，而是让音频参数真正改变树的生长逻辑：主干、分叉、花朵和花粉都要被声音触发。",
+    points: [
+      ["创意判断", "音乐响应生命树应该在静音时成立，在有声时显露节奏结构。"],
+      ["视觉承诺", "低频像根部惯性，中频像树冠生长，高频像叶端发光。"],
+      ["工程边界", "单文件 p5.js HTML，能直接浏览器打开，并保留 PNG/GIF/帧序列快捷键。"]
+    ],
+    asideLabel: "Concept",
+    asideBig: "生命树",
+    asideText: "把“音画联觉”拆成可以被代码证明的映射，而不是只做跟随节拍的装饰。",
+    quote: "好看的声画联动，第一步是让画面有自己的生物学。",
+    footerTitle: "从主题到系统",
+    footerNote: "p5.js + p5.sound + 递归树",
+    footerMeta: "01 / 10",
+    diagram: "tree"
+  },
+  {
+    kicker: "Card 02",
+    series: "Creative Coding Build Log",
+    title: "搭建画布时先分层，不让效果挤在一起",
+    subtitle: "实现从一开始就拆成背景、纹理、拖尾、辉光和主绘制层，避免单 pass canvas 变成扁平教程效果。",
+    points: [
+      ["技术栈", "使用 p5.js 1.11.3 和 p5.sound，原因是 AudioIn / FFT 路径稳定。"],
+      ["图层策略", "bgLayer 负责星点与渐变，grainLayer 负责纸面质感，trailLayer 保存花粉轨迹。"],
+      ["可验证输出", "preview.png 来自真实浏览器截图，不是手工示意图。"]
+    ],
+    asideLabel: "Structure",
+    asideBig: "4 层",
+    asideText: "层级让画面在静音状态也有空间深度，之后音频只需要驱动关键结构。",
+    quote: "先有稳定画布，再谈实时响应。",
+    footerTitle: "画布结构",
+    footerNote: "bg / grain / trail / glow",
+    footerMeta: "02 / 10",
+    diagram: "layers"
+  },
+  {
+    kicker: "Card 03",
+    series: "Creative Coding Build Log",
+    title: "递归树必须先在无声时站得住",
+    subtitle: "主干从根部向上递归生长，分支角度、长度、粗细和终点叶端全部由同一棵树模型产生。",
+    points: [
+      ["主干", "trunkAngle 控制主方向，trunkLength 和 trunkWeight 控制视觉重量。"],
+      ["分叉", "drawBranch 递归产生 2 到 4 个子枝，分叉深度由音乐能量决定。"],
+      ["叶端", "recordLeaf 收集所有终点，后续花朵、果实和花粉都从这些真实叶端生成。"]
+    ],
+    asideLabel: "Algorithm",
+    asideBig: "递归",
+    asideText: "树的结构先统一，后面每个音频通道才有明确的“器官”可以驱动。",
+    quote: "先设计植物的骨架，再让声音进入骨架。",
+    footerTitle: "递归骨架",
+    footerNote: "drawBranch → recordLeaf",
+    footerMeta: "03 / 10",
+    diagram: "branch"
+  },
+  {
+    kicker: "Card 04",
+    series: "Creative Coding Build Log",
+    title: "入口做成三条路，首屏不能依赖权限",
+    subtitle: "Demo、Mic 和 MIDI 三种输入模式解决不同场景：无权限预览、真实环境输入、可复现音乐驱动。",
+    points: [
+      ["Demo", "内置周期信号模拟 bass / mid / treble，保证打开页面就有动态。"],
+      ["Mic", "麦克风路径用 p5.FFT 读取 bass、mid、treble 等频段。"],
+      ["MIDI", "内置 16 步音序，后续作为音画联觉的主路径。"]
+    ],
+    asideLabel: "Input Modes",
+    asideBig: "3 路",
+    asideText: "权限失败不是空白页，演示模式不是最终联动，MIDI 才负责可复现的声画结构。",
+    quote: "交互作品要先考虑打开它的人会遇到什么限制。",
+    footerTitle: "输入策略",
+    footerNote: "Demo / Mic / MIDI",
+    footerMeta: "04 / 10",
+    diagram: "routes"
+  },
+  {
+    kicker: "Card 05",
+    series: "Creative Coding Build Log",
+    title: "第一次 MIDI 版本只是并行，不是真联动",
+    subtitle: "初版 Start MIDI 同时播放声音并写入视觉脉冲，但听感和画面仍像两条轨道：它们同一时刻发生，却没有共用同一物理事件。",
+    points: [
+      ["问题", "midiPulse 自己衰减，声音包络自己播放，二者没有共享 envelope。"],
+      ["症状", "画面会亮、会动，但很难看出具体哪个音符造成了哪次动作。"],
+      ["判断", "同步触发不是联动；同源状态才是联动。"]
+    ],
+    asideLabel: "Diagnosis",
+    asideBig: "伪联动",
+    asideText: "用户指出“背景音乐和画面各管各的”，这个反馈击中了架构问题。",
+    quote: "同一时间发生，不等于来自同一个原因。",
+    footerTitle: "问题定位",
+    footerNote: "midiPulse model failed",
+    footerMeta: "05 / 10",
+    diagram: "split"
+  },
+  {
+    kicker: "Card 06",
+    series: "Creative Coding Build Log",
+    title: "把 MIDI 音符改成唯一事实源",
+    subtitle: "重构后，每个音符登记为 activeMidiNotes：note、startAt、duration、velocity、role、pan 和 hue 都进入同一个事件表。",
+    points: [
+      ["统一事件", "playSynthNote 播放声音前先 registerMidiVisualNote。"],
+      ["统一时间", "readMidiNotes 每帧以 AudioContext.currentTime 扫描仍在发声的音符。"],
+      ["统一角色", "bass / chord / lead / spark 决定音符作用于哪个植物器官。"]
+    ],
+    asideLabel: "Single Source",
+    asideBig: "Note",
+    asideText: "声音合成器和视觉系统不再各算各的，它们读取同一组 note event。",
+    quote: "让音符成为数据源，而不是让节拍成为装饰触发器。",
+    footerTitle: "重构核心",
+    footerNote: "activeMidiNotes",
+    footerMeta: "06 / 10",
+    diagram: "source"
+  },
+  {
+    kicker: "Card 07",
+    series: "Creative Coding Build Log",
+    title: "同一个 envelope 同时喂给声音和画面",
+    subtitle: "midiEnvelope 根据 attack、hold 和 release 计算当前音符强度。音频听到的持续感，视觉也按同一条曲线生长、变亮、消散。",
+    points: [
+      ["低音包络", "推动主干摆动和根部光环，形成鼓点一样的惯性。"],
+      ["和弦包络", "提高分叉深度，并在树冠中形成透明音环。"],
+      ["高音包络", "点亮花朵、果实，并把花粉从叶端喷出。"]
+    ],
+    asideLabel: "Envelope",
+    asideBig: "A/H/R",
+    asideText: "包络曲线让视觉不只是闪一下，而是和声音一样有起音、保持和释放。",
+    quote: "音画联觉的关键不是频段名，而是共同的时间曲线。",
+    footerTitle: "时间曲线",
+    footerNote: "attack / hold / release",
+    footerMeta: "07 / 10",
+    diagram: "envelope"
+  },
+  {
+    kicker: "Card 08",
+    series: "Creative Coding Build Log",
+    title: "每类声音都要有可见器官",
+    subtitle: "真正能被感知的联动，需要让不同音符在画面中有稳定位置：根、树干、树冠、叶端和空中粒子各有职责。",
+    points: [
+      ["Bass", "根部光环和主干偏摆，让低频有重量。"],
+      ["Chord", "树冠音环和分叉复杂度，让和声有空间。"],
+      ["Lead", "发光点、果实和花粉，让高音有闪烁感。"]
+    ],
+    asideLabel: "Mapping",
+    asideBig: "器官",
+    asideText: "不是所有声音都改变所有东西；稳定映射比大幅度抖动更像联觉。",
+    quote: "让声音找到身体，画面才会像在听。",
+    footerTitle: "器官映射",
+    footerNote: "root / trunk / canopy / leaf",
+    footerMeta: "08 / 10",
+    diagram: "organs"
+  },
+  {
+    kicker: "Card 09",
+    series: "Creative Coding Build Log",
+    title: "验证不是看一眼，而是读运行态",
+    subtitle: "浏览器验证直接读取页面状态：activeMidiNotes、roles、midiVisual、canvas 像素和 CDP error 列表，避免只凭截图判断。",
+    points: [
+      ["状态证据", "roles 同时出现 bass、chord、lead、spark。"],
+      ["画面证据", "可见 canvas 为 1，截图尺寸为 1080 或 1400 目标尺寸。"],
+      ["错误证据", "CDP Runtime exception 与 error log 为空。"]
+    ],
+    asideLabel: "Verification",
+    asideBig: "证据",
+    asideText: "创意代码也要可验证：能说清楚“哪个状态证明了它在工作”。",
+    quote: "视觉验证要同时看像素和运行态。",
+    footerTitle: "验证方法",
+    footerNote: "CDP state + screenshot",
+    footerMeta: "09 / 10",
+    diagram: "verify"
+  },
+  {
+    kicker: "Card 10",
+    series: "Creative Coding Build Log",
+    title: "最后交付的是作品，也是一个可复用方法",
+    subtitle: "这次实现留下了一个判断标准：凡是声画联动，都要问声音和画面是否共用同一份事件、同一条包络、同一套验证证据。",
+    points: [
+      ["文件", "index.html 是可运行作品，content.md 记录实现思路，preview.png 来自真实截图。"],
+      ["经验", "用户指出“不联动”后，正确修复不是加大视觉反应，而是改联动模型。"],
+      ["下一步", "可以把内置 MIDI 换成真实 .mid 解析，继续保留 note envelope 驱动。"]
+    ],
+    asideLabel: "Takeaway",
+    asideBig: "同源",
+    asideText: "好的联动不是更热闹，而是因果更清楚。",
+    quote: "声音和画面共用事实源，观众才会相信它们在彼此响应。",
+    footerTitle: "交付总结",
+    footerNote: "work + method",
+    footerMeta: "10 / 10",
+    diagram: "finish"
+  }
+];
+
+const token = {
+  tc: "#c96442",
+  nk: "#141413",
+  og: "#5e5d59",
+  sg: "#87867f",
+  bw: "#e8e6dc",
+  ws: "#b0aea5",
+  pg: "#f5f4ed",
+  iv: "#faf9f5"
+};
+
+function getCardIndex() {
+  const params = new URLSearchParams(window.location.search);
+  const n = Number(params.get("card") || "1");
+  return Math.max(0, Math.min(cards.length - 1, Math.floor(n) - 1));
+}
+
+function pointHTML(points) {
+  return points.map(([head, body]) => `
+    <div class="point">
+      <b>${head}</b>
+      <span>${body}</span>
+    </div>
+  `).join("");
+}
+
+function diagramSVG(kind) {
+  const line = `stroke="${token.ws}" stroke-width="2" fill="none" opacity="0.78"`;
+  const coral = `fill="${token.tc}"`;
+  const ink = `fill="${token.iv}" opacity="0.86"`;
+  const weak = `fill="${token.ws}" opacity="0.42"`;
+  const dot = (x, y, r = 6, fill = token.tc) => `<circle cx="${x}" cy="${y}" r="${r}" fill="${fill}"/>`;
+  const label = (x, y, text) => `<text x="${x}" y="${y}" fill="${token.ws}" font-size="10" font-family="-apple-system, system-ui, sans-serif" letter-spacing="1">${text}</text>`;
+
+  const diagrams = {
+    tree: `<path d="M160 228 C158 168 134 138 108 110 M160 228 C164 164 194 130 224 94 M160 178 C140 148 144 104 120 62 M172 154 C196 128 206 91 238 48" ${line}/>${dot(160,228,9)}${dot(108,110,7,token.iv)}${dot(224,94,7,token.iv)}${dot(120,62,7,token.tc)}${dot(238,48,7,token.tc)}`,
+    layers: `<rect x="54" y="50" width="210" height="38" ${weak}/><rect x="72" y="82" width="210" height="38" ${ink}/><rect x="90" y="114" width="210" height="38" ${weak}/><rect x="108" y="146" width="210" height="38" ${ink}/><line x1="54" y1="214" x2="284" y2="214" ${line}/>${label(54,238,"BG / GRAIN / TRAIL / GLOW")}`,
+    branch: `<path d="M160 228 L160 148 L118 94 M160 148 L206 82 M160 176 L112 134 M160 176 L220 138" ${line}/>${dot(160,228,9)}${dot(160,148,6)}${dot(118,94,6,token.iv)}${dot(206,82,6,token.iv)}${dot(112,134,5,token.tc)}${dot(220,138,5,token.tc)}`,
+    routes: `<circle cx="160" cy="132" r="38" fill="${token.iv}" opacity="0.82"/><path d="M160 132 L82 72 M160 132 L160 52 M160 132 L242 72" ${line}/>${dot(82,72,8)}${dot(160,52,8,token.iv)}${dot(242,72,8)}${label(50,214,"DEMO   MIC   MIDI")}`,
+    split: `<path d="M72 80 C120 60 140 104 160 86 C196 52 224 78 262 62" ${line}/><path d="M72 178 C116 198 138 154 172 176 C210 202 228 162 264 184" ${line}/><line x1="160" y1="70" x2="160" y2="196" stroke="${token.tc}" stroke-width="2" opacity="0.72"/>${label(70,236,"SAME TIME, DIFFERENT SOURCE")}`,
+    source: `<circle cx="160" cy="68" r="28" ${coral}/><path d="M160 96 L92 168 M160 96 L160 168 M160 96 L228 168" ${line}/>${dot(92,168,8,token.iv)}${dot(160,168,8,token.iv)}${dot(228,168,8,token.iv)}${label(92,220,"ONE NOTE EVENT")}`,
+    envelope: `<polyline points="38,204 78,204 104,62 144,62 254,204 292,204" ${line}/><circle cx="104" cy="62" r="6" ${coral}/><circle cx="144" cy="62" r="6" ${coral}/>${label(44,232,"ATTACK / HOLD / RELEASE")}`,
+    organs: `<path d="M160 226 C150 174 136 142 110 112 M160 226 C172 168 208 128 232 82" ${line}/><ellipse cx="160" cy="224" rx="48" ry="14" fill="${token.tc}" opacity="0.28"/><ellipse cx="112" cy="96" rx="38" ry="18" fill="${token.iv}" opacity="0.28"/><ellipse cx="232" cy="76" rx="40" ry="18" fill="${token.iv}" opacity="0.28"/>${dot(120,70,5,token.tc)}${dot(246,50,5,token.tc)}`,
+    verify: `<rect x="62" y="54" width="196" height="132" fill="${token.iv}" opacity="0.16" stroke="${token.ws}" stroke-width="1"/><polyline points="82,152 116,118 146,132 190,86 238,108" ${line}/>${dot(82,152,5)}${dot(190,86,5)}${label(78,224,"STATE + PIXEL + ERROR LOG")}`,
+    finish: `<path d="M74 132 L130 80 L186 132 L246 74" ${line}/><path d="M74 184 L130 132 L186 184 L246 126" ${line}/>${dot(130,80,7)}${dot(246,74,7,token.iv)}${dot(186,184,7)}${label(68,232,"SHARED SOURCE, CLEAR CAUSALITY")}`
+  };
+
+  return diagrams[kind] || diagrams.tree;
+}
+
+function render() {
+  const card = cards[getCardIndex()];
+  document.getElementById("kicker").textContent = card.kicker;
+  document.getElementById("series").textContent = card.series;
+  document.getElementById("folio").textContent = String(getCardIndex() + 1).padStart(2, "0");
+  document.getElementById("title").textContent = card.title;
+  document.getElementById("subtitle").textContent = card.subtitle;
+  document.getElementById("points").innerHTML = pointHTML(card.points);
+  document.getElementById("asideLabel").textContent = card.asideLabel;
+  document.getElementById("asideBig").textContent = card.asideBig;
+  document.getElementById("asideText").textContent = card.asideText;
+  document.getElementById("diagram").innerHTML = diagramSVG(card.diagram);
+  document.getElementById("quote").textContent = card.quote;
+  document.getElementById("footerTitle").textContent = card.footerTitle;
+  document.getElementById("footerNote").textContent = card.footerNote;
+  document.getElementById("footerMeta").textContent = card.footerMeta;
+}
+
+render();
+</script>
+</body>
+</html>

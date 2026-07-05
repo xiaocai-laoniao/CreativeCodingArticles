@@ -1,0 +1,951 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>p5.js 音乐响应生命树</title>
+<link rel="icon" href="data:,">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.11.3/p5.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.11.3/addons/p5.sound.min.js"></script>
+<script>p5.disableFriendlyErrors = true;</script>
+<script>
+  if (new URLSearchParams(window.location.search).has('preview')) {
+    document.documentElement.classList.add('preview');
+  }
+</script>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    overflow: hidden;
+    background: #07070b;
+    color: #f4e9c5;
+    font-family: Inter, "SF Pro Display", "PingFang SC", "Microsoft YaHei", sans-serif;
+  }
+  canvas { display: block; }
+  .panel {
+    position: fixed;
+    left: 18px;
+    bottom: 18px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border: 1px solid rgba(244, 226, 166, 0.24);
+    background: rgba(9, 11, 14, 0.58);
+    backdrop-filter: blur(14px);
+    border-radius: 8px;
+    box-shadow: 0 12px 40px rgba(0, 0, 0, 0.28);
+    user-select: none;
+  }
+  .panel button {
+    min-width: 82px;
+    height: 34px;
+    border: 1px solid rgba(244, 226, 166, 0.38);
+    border-radius: 6px;
+    background: rgba(244, 226, 166, 0.12);
+    color: #fff0ba;
+    font: 600 13px/1 Inter, "PingFang SC", sans-serif;
+    letter-spacing: 0;
+    cursor: pointer;
+  }
+  .panel button:hover {
+    background: rgba(244, 226, 166, 0.2);
+  }
+  .preview .panel {
+    display: none;
+  }
+  .status {
+    min-width: 112px;
+    color: rgba(246, 236, 205, 0.72);
+    font-size: 12px;
+    line-height: 1.25;
+    white-space: nowrap;
+  }
+  @media (max-width: 640px) {
+    .panel {
+      left: 12px;
+      right: 12px;
+      bottom: 12px;
+      justify-content: space-between;
+    }
+    .status {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+  }
+</style>
+</head>
+<body>
+<div class="panel" aria-label="audio controls">
+  <button id="midiButton" type="button">Start MIDI</button>
+  <button id="micButton" type="button">Start Mic</button>
+  <button id="demoButton" type="button">Demo</button>
+  <span id="status" class="status">Demo signal</span>
+</div>
+
+<script>
+const CONFIG = {
+  seed: 41973,
+  fps: 60,
+  maxParticles: 560,
+  baseDepth: 7,
+  branchScale: 0.72,
+  minLengthRatio: 0.011,
+  backgroundStars: 380,
+  rootGlow: 0.82,
+  bpm: 92
+};
+
+const PALETTE = {
+  soil: [22, 55, 20],
+  deepPlum: [286, 52, 9],
+  deepGreen: [168, 48, 11],
+  barkShadow: [24, 42, 24],
+  barkLight: [40, 58, 84],
+  sap: [92, 42, 88],
+  leaf: [145, 50, 76],
+  leafCool: [182, 48, 88],
+  flower: [332, 47, 98],
+  fruit: [44, 88, 100],
+  pollen: [54, 92, 100],
+  blueSpark: [197, 68, 100],
+  ivory: [47, 18, 97]
+};
+
+let bgLayer;
+let trailLayer;
+let glowLayer;
+let grainLayer;
+let fft;
+let mic;
+let audioStarted = false;
+let demoMode = true;
+let midiMode = false;
+let paused = false;
+let branchBudget = 0;
+let audio = { bass: 0.36, lowMid: 0.34, mid: 0.34, highMid: 0.28, treble: 0.24, level: 0.30 };
+let smoothAudio = { bass: 0.36, lowMid: 0.34, mid: 0.34, highMid: 0.28, treble: 0.24, level: 0.30 };
+let midiContext;
+let midiMaster;
+let midiDelay;
+let midiFilter;
+let midiStartedAt = 0;
+let midiStep = -1;
+let midiHue = 45;
+let activeMidiNotes = [];
+let midiVisual = {
+  bass: 0,
+  lowMid: 0,
+  mid: 0,
+  highMid: 0,
+  treble: 0,
+  level: 0,
+  hue: 45,
+  noteCount: 0,
+  bassHit: 0,
+  chordGlow: 0,
+  leadSpark: 0,
+  pan: 0,
+  pitch: 0.5
+};
+let particles = [];
+let leafTips = [];
+let statusEl;
+let midiButton;
+let micButton;
+let demoButton;
+
+const MIDI_PATTERN = [
+  { bass: 36, chord: [55, 60, 67], lead: 79, vel: 0.86 },
+  { bass: null, chord: null, lead: 84, vel: 0.46 },
+  { bass: 43, chord: [58, 62, 67], lead: 86, vel: 0.72 },
+  { bass: null, chord: null, lead: 91, vel: 0.58 },
+  { bass: 41, chord: [57, 60, 65], lead: 88, vel: 0.80 },
+  { bass: null, chord: [53, 57, 60], lead: 84, vel: 0.42 },
+  { bass: 48, chord: null, lead: 91, vel: 0.76 },
+  { bass: null, chord: null, lead: 95, vel: 0.62 },
+  { bass: 38, chord: [53, 58, 65], lead: 82, vel: 0.78 },
+  { bass: null, chord: null, lead: 86, vel: 0.44 },
+  { bass: 45, chord: [60, 64, 69], lead: 93, vel: 0.82 },
+  { bass: null, chord: null, lead: 88, vel: 0.50 },
+  { bass: 43, chord: [55, 62, 67], lead: 91, vel: 0.72 },
+  { bass: null, chord: [59, 62, 67], lead: 98, vel: 0.64 },
+  { bass: 31, chord: null, lead: 86, vel: 0.88 },
+  { bass: null, chord: null, lead: 79, vel: 0.40 }
+];
+
+function setup() {
+  pixelDensity(1);
+  createCanvas(windowWidth, windowHeight);
+  frameRate(CONFIG.fps);
+  colorMode(HSB, 360, 100, 100, 100);
+  randomSeed(CONFIG.seed);
+  noiseSeed(CONFIG.seed);
+  statusEl = document.getElementById('status');
+  midiButton = document.getElementById('midiButton');
+  micButton = document.getElementById('micButton');
+  demoButton = document.getElementById('demoButton');
+  midiButton.addEventListener('click', startMidiGarden);
+  micButton.addEventListener('click', startMic);
+  demoButton.addEventListener('click', useDemoSignal);
+  buildLayers();
+}
+
+function draw() {
+  if (paused) return;
+
+  const time = frameCount / CONFIG.fps;
+  readAudio(time);
+
+  image(bgLayer, 0, 0, width, height);
+  tint(255, 100);
+  image(grainLayer, 0, 0, width, height);
+  noTint();
+
+  fadeLayer(trailLayer, 8 + smoothAudio.level * 8);
+  glowLayer.clear();
+  leafTips = [];
+
+  const unit = Math.min(width, height);
+  const root = createVector(width * 0.5, height * 0.91);
+  const bassHitSwing = midiMode ? Math.sin(midiStep * 0.71 + midiVisual.pitch * TWO_PI) * midiVisual.bassHit * 0.18 : 0;
+  const bassSwing = (smoothAudio.bass - 0.36) * 0.34 + bassHitSwing;
+  const wind = Math.sin(time * 0.62) * 0.035 + Math.sin(time * 0.19 + 2.1) * 0.025;
+  const trunkAngle = -HALF_PI + bassSwing + wind;
+  const depthBoost = Math.floor(smoothAudio.mid * 4.2 + smoothAudio.level * 2.5 + (midiMode ? midiVisual.chordGlow * 2.2 : 0));
+  const maxDepth = constrain(CONFIG.baseDepth + depthBoost, 8, 11);
+  const trunkLength = unit * (0.205 + smoothAudio.lowMid * 0.08 + smoothAudio.level * 0.035);
+  const trunkWeight = unit * (0.018 + smoothAudio.level * 0.017 + smoothAudio.bass * 0.008 + (midiMode ? midiVisual.bassHit * 0.006 : 0));
+
+  branchBudget = Math.floor(7600 + smoothAudio.mid * 1500 + smoothAudio.level * 900);
+  drawRootHalo(root, unit, time);
+  drawBranch(root.x, root.y, trunkAngle, trunkLength, trunkWeight, 0, maxDepth, 1, 0, time);
+  drawCanopyVeil(unit, time);
+  drawMidiNoteBloom(root, unit, time);
+  spawnPollen(time);
+  updateParticles(time);
+
+  blendMode(ADD);
+  image(trailLayer, 0, 0);
+  image(glowLayer, 0, 0);
+  blendMode(BLEND);
+  drawSpectralRoots(root, unit, time);
+  drawVignette();
+}
+
+function readAudio(time) {
+  if (audioStarted && !demoMode && fft) {
+    fft.analyze();
+    audio.bass = energy('bass');
+    audio.lowMid = energy('lowMid');
+    audio.mid = energy('mid');
+    audio.highMid = energy('highMid');
+    audio.treble = energy('treble');
+    const bands = [audio.bass, audio.lowMid, audio.mid, audio.highMid, audio.treble];
+    audio.level = constrain(bands.reduce((sum, value) => sum + value, 0) / bands.length, 0, 1);
+  } else if (midiMode) {
+    readMidiNotes();
+  } else {
+    const pulseA = 0.5 + 0.5 * Math.sin(time * 1.45);
+    const pulseB = 0.5 + 0.5 * Math.sin(time * 2.85 + 1.3);
+    const pulseC = 0.5 + 0.5 * Math.sin(time * 5.9 + Math.sin(time * 0.7));
+    const swell = 0.5 + 0.5 * Math.sin(time * 0.33 + 1.1);
+    audio.bass = 0.22 + pulseA * 0.47 + swell * 0.10;
+    audio.lowMid = 0.18 + pulseB * 0.35;
+    audio.mid = 0.20 + Math.abs(Math.sin(time * 1.95 + pulseA)) * 0.44;
+    audio.highMid = 0.16 + pulseC * 0.42;
+    audio.treble = 0.12 + Math.pow(pulseC, 2.8) * 0.70;
+    audio.level = 0.23 + (audio.bass + audio.mid + audio.treble) / 4.5;
+  }
+
+  for (const key of Object.keys(smoothAudio)) {
+    const midiRate = { bass: 0.30, lowMid: 0.24, mid: 0.22, highMid: 0.30, treble: 0.44, level: 0.28 }[key];
+    const rate = midiMode ? midiRate : (key === 'treble' ? 0.2 : 0.12);
+    smoothAudio[key] = lerp(smoothAudio[key], constrain(audio[key], 0, 1), rate);
+  }
+}
+
+function energy(name) {
+  return constrain(fft.getEnergy(name) / 255, 0, 1);
+}
+
+function readMidiNotes() {
+  updateMidiSynth();
+  const now = midiContext.currentTime;
+  const visual = {
+    bass: 0,
+    lowMid: 0,
+    mid: 0,
+    highMid: 0,
+    treble: 0,
+    level: 0,
+    hue: midiHue,
+    noteCount: 0,
+    bassHit: 0,
+    chordGlow: 0,
+    leadSpark: 0,
+    pan: 0,
+    pitch: 0.5
+  };
+  let hueSum = 0;
+  let weightSum = 0;
+  let panSum = 0;
+  let pitchSum = 0;
+  const retained = [];
+
+  for (const noteEvent of activeMidiNotes) {
+    if (now < noteEvent.startAt + noteEvent.duration + 0.45) {
+      retained.push(noteEvent);
+    }
+    const env = midiEnvelope(noteEvent, now);
+    if (env <= 0.001) continue;
+
+    const amp = env * noteEvent.velocity;
+    const pitchNorm = constrain((noteEvent.note - 31) / 67, 0, 1);
+    visual.noteCount += 1;
+    visual.level += amp * 0.58;
+    hueSum += noteEvent.hue * amp;
+    weightSum += amp;
+    panSum += noteEvent.pan * amp;
+    pitchSum += pitchNorm * amp;
+
+    if (noteEvent.role === 'bass') {
+      visual.bass += amp * 1.22;
+      visual.lowMid += amp * 0.28;
+      visual.bassHit = Math.max(visual.bassHit, amp);
+    } else if (noteEvent.role === 'chord') {
+      visual.lowMid += amp * 0.34;
+      visual.mid += amp * 0.84;
+      visual.highMid += amp * 0.24;
+      visual.chordGlow = Math.max(visual.chordGlow, amp);
+    } else if (noteEvent.role === 'spark') {
+      visual.highMid += amp * 0.34;
+      visual.treble += amp * 1.18;
+      visual.leadSpark = Math.max(visual.leadSpark, amp);
+    } else {
+      visual.mid += amp * 0.18;
+      visual.highMid += amp * 0.48;
+      visual.treble += amp * 0.92;
+      visual.leadSpark = Math.max(visual.leadSpark, amp);
+    }
+  }
+
+  activeMidiNotes = retained;
+  if (weightSum > 0) {
+    midiHue = hueSum / weightSum;
+    visual.hue = midiHue;
+    visual.pan = panSum / weightSum;
+    visual.pitch = pitchSum / weightSum;
+  }
+
+  midiVisual = visual;
+  audio.bass = constrain(0.06 + visual.bass * 0.92, 0, 1);
+  audio.lowMid = constrain(0.08 + visual.lowMid * 0.86, 0, 1);
+  audio.mid = constrain(0.09 + visual.mid * 0.90, 0, 1);
+  audio.highMid = constrain(0.07 + visual.highMid * 0.92, 0, 1);
+  audio.treble = constrain(0.05 + visual.treble * 0.96, 0, 1);
+  audio.level = constrain(0.08 + visual.level * 0.74, 0, 1);
+}
+
+function midiEnvelope(noteEvent, now) {
+  const t = now - noteEvent.startAt;
+  if (t < 0 || t > noteEvent.duration) return 0;
+  const attack = Math.min(0.032, noteEvent.duration * 0.25);
+  const hold = Math.min(noteEvent.role === 'bass' ? 0.06 : 0.025, noteEvent.duration * 0.22);
+  if (t < attack) return 1 - Math.pow(1 - t / attack, 3);
+  if (t < attack + hold) return 1;
+  const release = Math.max(0.001, noteEvent.duration - attack - hold);
+  const p = constrain((t - attack - hold) / release, 0, 1);
+  const curve = noteEvent.role === 'bass' ? 1.35 : noteEvent.role === 'chord' ? 1.8 : 2.65;
+  return Math.pow(1 - p, curve);
+}
+
+function drawBranch(x, y, angle, len, weight, depth, maxDepth, energyBias, lineage, time) {
+  branchBudget -= 1;
+  const unit = Math.min(width, height);
+  const end = endpoint(x, y, angle, len);
+  const sway = Math.sin(time * (0.9 + depth * 0.045) + lineage * 12.9898) * (0.012 + smoothAudio.bass * 0.018) * depth;
+  const curveBend = (hashSigned(lineage + depth * 2.77) * 0.18 + sway) * (depth > 1 ? 1 : 0.45);
+  const c1 = endpoint(x, y, angle + curveBend, len * 0.38);
+  const c2 = endpoint(x, y, angle + curveBend * 1.5, len * 0.72);
+  const hue = lerp(28, 84, depth / maxDepth) + smoothAudio.lowMid * 18;
+  const sat = lerp(54, 38, depth / maxDepth);
+  const bri = lerp(52, 88, depth / maxDepth) + smoothAudio.level * 10;
+  const alpha = lerp(82, 40, depth / maxDepth);
+
+  noFill();
+  stroke(hue, sat, bri, alpha);
+  strokeWeight(Math.max(0.6, weight * (1 + smoothAudio.level * 0.75)));
+  bezier(x, y, c1.x, c1.y, c2.x, c2.y, end.x, end.y);
+
+  if (depth < 4) {
+    stroke(95, 38, 88, 10 + smoothAudio.bass * 18);
+    strokeWeight(Math.max(0.45, weight * 0.33));
+    bezier(x, y, c1.x, c1.y, c2.x, c2.y, end.x, end.y);
+  }
+
+  const minLen = unit * CONFIG.minLengthRatio;
+  if (depth >= maxDepth || len < minLen || branchBudget <= 0) {
+    recordLeaf(end.x, end.y, angle, weight, depth, lineage, time);
+    return;
+  }
+
+  const forkGate = smoothAudio.mid + smoothAudio.highMid * 0.55 + energyBias * 0.12;
+  let forks = 2;
+  if (depth > 1 && depth < maxDepth - 2 && forkGate > 0.52 + depth * 0.018 + hash01(lineage + depth) * 0.24) forks = 3;
+  if (depth > 3 && depth < 6 && smoothAudio.mid > 0.82 && hash01(lineage * 3.3) > 0.82) forks = 4;
+
+  for (let i = 0; i < forks; i++) {
+    const spreadNorm = forks === 1 ? 0 : i / (forks - 1);
+    const side = spreadNorm * 2 - 1;
+    const randomBend = hashSigned(lineage * 19.13 + i * 7.17 + depth * 3.31);
+    const forkSpread = 0.31 + smoothAudio.mid * 0.28 + depth * 0.016;
+    const childAngle = angle
+      + side * forkSpread
+      + randomBend * (0.16 + smoothAudio.highMid * 0.12)
+      + smoothAudio.bass * Math.sin(time * 1.1 + lineage) * 0.045;
+    const childLen = len * (CONFIG.branchScale + randomBend * 0.045 - i * 0.015 + smoothAudio.lowMid * 0.045);
+    const childWeight = weight * (0.66 + smoothAudio.level * 0.04);
+    drawBranch(
+      end.x,
+      end.y,
+      childAngle,
+      childLen,
+      childWeight,
+      depth + 1,
+      maxDepth,
+      energyBias * 0.93 + forkGate * 0.07,
+      lineage * 1.73 + i * 0.271 + depth * 0.019,
+      time
+    );
+  }
+}
+
+function recordLeaf(x, y, angle, weight, depth, lineage, time) {
+  const pulse = 0.35 + smoothAudio.treble * 0.95 + smoothAudio.level * 0.38;
+  const size = Math.max(1.8, weight * 2.8 + smoothAudio.highMid * 5.5);
+  const hueShift = hashSigned(lineage * 9.1) * 18 + midiMode * Math.sin(midiHue * 0.05 + lineage) * 12;
+  leafTips.push({ x, y, angle, weight, lineage });
+
+  glowLayer.noStroke();
+  glowLayer.fill((PALETTE.leaf[0] + hueShift + 360) % 360, 50, 72 + smoothAudio.mid * 22, 8 + pulse * 18);
+  glowLayer.ellipse(x, y, size * 2.8, size * 2.2);
+
+  const flowerChance = 0.28 + smoothAudio.level * 0.34 + (midiMode ? midiVisual.leadSpark * 0.36 : 0);
+  if (hash01(lineage + depth * 4.23) < flowerChance) {
+    const petals = 4 + Math.floor(hash01(lineage * 5.3) * 4);
+    const radius = size * (1.4 + smoothAudio.treble * 1.15);
+    for (let i = 0; i < petals; i++) {
+      const a = angle + TWO_PI * i / petals + Math.sin(time * 1.4 + lineage) * 0.08;
+      const px = x + Math.cos(a) * radius * 0.72;
+      const py = y + Math.sin(a) * radius * 0.72;
+      glowLayer.fill(
+        (PALETTE.flower[0] + hueShift * 0.4 + smoothAudio.treble * 28 + midiHue * 0.18) % 360,
+        42,
+        82 + smoothAudio.highMid * 18 + (midiMode ? midiVisual.leadSpark * 12 : 0),
+        14 + smoothAudio.treble * 34 + (midiMode ? midiVisual.leadSpark * 38 : 0)
+      );
+      glowLayer.ellipse(px, py, radius * 0.92, radius * 0.42);
+    }
+    glowLayer.fill((PALETTE.fruit[0] + midiHue * 0.12) % 360, PALETTE.fruit[1], 78 + smoothAudio.treble * 18 + (midiMode ? midiVisual.leadSpark * 16 : 0), 28 + smoothAudio.treble * 36 + (midiMode ? midiVisual.leadSpark * 42 : 0));
+    glowLayer.ellipse(x, y, radius * 0.42, radius * 0.42);
+  }
+}
+
+function spawnPollen(time) {
+  if (leafTips.length === 0) return;
+  const trebleImpact = Math.max(0, smoothAudio.treble - 0.30);
+  const noteSpark = midiMode ? midiVisual.leadSpark * 18 : 0;
+  const burst = Math.floor(trebleImpact * 18 + smoothAudio.highMid * 3 + noteSpark);
+  const count = demoMode ? burst : Math.min(18, burst);
+  for (let i = 0; i < count && particles.length < CONFIG.maxParticles; i++) {
+    const idx = Math.floor(hash01(frameCount * 0.37 + i * 23.1 + smoothAudio.treble * 9.7) * leafTips.length);
+    const tip = leafTips[idx];
+    const angle = tip.angle + hashSigned(tip.lineage + time + i) * 1.2 - HALF_PI * 0.12;
+    const speed = 0.35 + smoothAudio.treble * 2.9 + hash01(tip.lineage * 7.7 + i) * 1.5;
+    particles.push(new Pollen(tip.x, tip.y, angle, speed, tip.lineage));
+  }
+}
+
+function updateParticles(time) {
+  trailLayer.blendMode(ADD);
+  for (let i = particles.length - 1; i >= 0; i--) {
+    const particle = particles[i];
+    particle.update(time);
+    particle.display(trailLayer);
+    if (particle.life <= 0 || particle.x < -80 || particle.x > width + 80 || particle.y < -80 || particle.y > height + 80) {
+      particles.splice(i, 1);
+    }
+  }
+  trailLayer.blendMode(BLEND);
+}
+
+class Pollen {
+  constructor(x, y, angle, speed, lineage) {
+    this.x = x;
+    this.y = y;
+    this.px = x;
+    this.py = y;
+    this.vx = Math.cos(angle) * speed;
+    this.vy = Math.sin(angle) * speed - 0.5 - smoothAudio.treble * 1.1;
+    this.life = 82 + hash01(lineage * 11.9) * 74;
+    this.maxLife = this.life;
+    this.size = 0.8 + smoothAudio.treble * 2.4 + hash01(lineage) * 1.5;
+    this.hue = hash01(lineage * 3.2) > 0.5 ? (PALETTE.pollen[0] + midiHue * 0.08) % 360 : (PALETTE.blueSpark[0] + midiHue * 0.06) % 360;
+    this.spin = hashSigned(lineage * 5.6) * 0.04;
+    this.seed = lineage;
+  }
+
+  update(time) {
+    this.px = this.x;
+    this.py = this.y;
+    const curl = noise(this.x * 0.0024, this.y * 0.0024, time * 0.16 + this.seed) * TWO_PI * 2;
+    this.vx += Math.cos(curl) * (0.018 + smoothAudio.highMid * 0.045) + this.spin;
+    this.vy += Math.sin(curl) * (0.015 + smoothAudio.treble * 0.035) - 0.008;
+    this.vx *= 0.988;
+    this.vy *= 0.988;
+    this.x += this.vx;
+    this.y += this.vy;
+    this.life -= 1.0 + smoothAudio.treble * 0.15;
+  }
+
+  display(layer) {
+    const a = Math.max(0, this.life / this.maxLife);
+    layer.stroke(this.hue, 78, 100, 38 * a);
+    layer.strokeWeight(this.size * (0.55 + a));
+    layer.line(this.px, this.py, this.x, this.y);
+    layer.noStroke();
+    layer.fill((this.hue + 12) % 360, 74, 100, 30 * a);
+    layer.ellipse(this.x, this.y, this.size * 1.8, this.size * 1.8);
+  }
+}
+
+function drawRootHalo(root, unit, time) {
+  const pulse = 0.5 + 0.5 * Math.sin(time * 1.2);
+  blendMode(ADD);
+  noStroke();
+  for (let i = 0; i < 8; i++) {
+    const p = i / 7;
+    fill(42 + p * 34, 52 - p * 12, 70 + smoothAudio.bass * 25, (9 - i) * CONFIG.rootGlow + smoothAudio.level * 12);
+    ellipse(root.x, root.y - unit * 0.015, unit * (0.08 + p * 0.19 + pulse * 0.018), unit * (0.026 + p * 0.056));
+  }
+  blendMode(BLEND);
+}
+
+function drawCanopyVeil(unit, time) {
+  blendMode(ADD);
+  noFill();
+  const cx = width * 0.5;
+  const cy = height * 0.48;
+  const radius = unit * (0.23 + smoothAudio.mid * 0.045);
+  for (let i = 0; i < 12; i++) {
+    const p = i / 12;
+    const wobble = Math.sin(time * 0.38 + p * TWO_PI) * unit * 0.012;
+    stroke(150 + p * 42, 34, 76 + smoothAudio.highMid * 20, 2.5 + smoothAudio.treble * 5);
+    strokeWeight(0.65);
+    ellipse(cx + wobble, cy - unit * 0.03, radius * (1.1 + p * 0.22), radius * (0.58 + p * 0.11));
+  }
+  blendMode(BLEND);
+}
+
+function drawMidiNoteBloom(root, unit, time) {
+  if (!midiMode || activeMidiNotes.length === 0 || !midiContext) return;
+
+  const now = midiContext.currentTime;
+  glowLayer.blendMode(ADD);
+  glowLayer.noFill();
+
+  for (const noteEvent of activeMidiNotes) {
+    const env = midiEnvelope(noteEvent, now);
+    if (env <= 0.002) continue;
+
+    const amp = env * noteEvent.velocity;
+    const pitchNorm = constrain((noteEvent.note - 31) / 67, 0, 1);
+    const hue = noteEvent.hue;
+
+    if (noteEvent.role === 'bass') {
+      const ring = unit * (0.045 + amp * 0.20);
+      glowLayer.stroke(hue, 64, 94, 12 + amp * 38);
+      glowLayer.strokeWeight(1.1 + amp * 3.8);
+      glowLayer.ellipse(root.x, root.y - unit * 0.026, ring * 2.8, ring * 0.82);
+      glowLayer.stroke((hue + 42) % 360, 48, 88, 8 + amp * 20);
+      glowLayer.line(root.x, root.y, root.x + Math.sin(time * 2.1 + noteEvent.note) * unit * 0.12 * amp, root.y - unit * (0.18 + amp * 0.16));
+    } else if (noteEvent.role === 'chord') {
+      const x = width * 0.5 + noteEvent.pan * unit * 0.28 + Math.sin(noteEvent.note * 0.19 + time) * unit * 0.018;
+      const y = height * (0.55 - pitchNorm * 0.28);
+      const radius = unit * (0.035 + amp * 0.095);
+      glowLayer.stroke(hue, 42, 96, 8 + amp * 24);
+      glowLayer.strokeWeight(0.8 + amp * 1.6);
+      glowLayer.ellipse(x, y, radius * 2.25, radius * 1.05);
+      glowLayer.stroke((hue + 84) % 360, 35, 90, 5 + amp * 14);
+      glowLayer.ellipse(x, y, radius * 1.18, radius * 0.52);
+    } else {
+      const side = noteEvent.pan || hashSigned(noteEvent.note * 2.17);
+      const x = width * 0.5 + side * unit * (0.18 + pitchNorm * 0.24);
+      const y = height * (0.50 - pitchNorm * 0.39) + Math.sin(time * 3.0 + noteEvent.note) * unit * 0.018;
+      const flare = unit * (0.007 + amp * 0.030);
+      glowLayer.noStroke();
+      glowLayer.fill(hue, 70, 100, 18 + amp * 58);
+      glowLayer.ellipse(x, y, flare * 2.8, flare * 2.8);
+      glowLayer.fill((hue + 34) % 360, 55, 100, 10 + amp * 32);
+      glowLayer.ellipse(x, y, flare * 6.5, flare * 6.5);
+      glowLayer.stroke(hue, 76, 100, 22 + amp * 45);
+      glowLayer.strokeWeight(0.65 + amp * 2.1);
+      glowLayer.line(x - side * flare * 8, y + flare * 3, x + side * flare * 12, y - flare * 6);
+    }
+  }
+
+  glowLayer.blendMode(BLEND);
+}
+
+function drawSpectralRoots(root, unit, time) {
+  push();
+  translate(root.x, root.y);
+  noFill();
+  for (let i = 0; i < 30; i++) {
+    const side = i % 2 === 0 ? -1 : 1;
+    const lane = i / 30;
+    const length = unit * (0.08 + lane * 0.23 + smoothAudio.bass * 0.04);
+    const angle = HALF_PI + side * (0.48 + lane * 1.05) + Math.sin(time * 0.55 + i) * 0.08;
+    const end = endpoint(0, 0, angle, length);
+    const c1 = endpoint(0, 0, angle - side * 0.42, length * 0.32);
+    const c2 = endpoint(0, 0, angle + side * 0.24, length * 0.78);
+    stroke(32 + lane * 58, 50, 72, 10 + smoothAudio.lowMid * 15);
+    strokeWeight(0.55 + smoothAudio.bass * 1.5);
+    bezier(0, 0, c1.x, c1.y, c2.x, c2.y, end.x, end.y);
+  }
+  pop();
+}
+
+function buildLayers() {
+  bgLayer = createGraphics(width, height);
+  trailLayer = createGraphics(width, height);
+  glowLayer = createGraphics(width, height);
+  grainLayer = createGraphics(width, height);
+  for (const layer of [bgLayer, trailLayer, glowLayer, grainLayer]) {
+    layer.pixelDensity(1);
+    layer.colorMode(HSB, 360, 100, 100, 100);
+    if (layer.canvas && layer.canvas.style) {
+      layer.canvas.style.display = 'none';
+    }
+  }
+  renderBackground();
+  renderGrain();
+  trailLayer.clear();
+  glowLayer.clear();
+}
+
+function renderBackground() {
+  const ctx = bgLayer.drawingContext;
+  const gradient = ctx.createRadialGradient(width * 0.48, height * 0.52, Math.min(width, height) * 0.02, width * 0.5, height * 0.5, Math.max(width, height) * 0.72);
+  gradient.addColorStop(0.00, '#243219');
+  gradient.addColorStop(0.28, '#171622');
+  gradient.addColorStop(0.62, '#101918');
+  gradient.addColorStop(1.00, '#07070b');
+  ctx.save();
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+  ctx.restore();
+
+  bgLayer.noStroke();
+  for (let y = 0; y < height; y += 3) {
+    const v = y / height;
+    bgLayer.fill(276 - v * 110, 34 + v * 18, 6 + v * 8, 11);
+    bgLayer.rect(0, y, width, 3);
+  }
+
+  bgLayer.blendMode(ADD);
+  for (let i = 0; i < CONFIG.backgroundStars; i++) {
+    const x = hash01(i * 13.71 + CONFIG.seed) * width;
+    const y = hash01(i * 9.43 + 17.2) * height * 0.82;
+    const nearCanopy = Math.max(0, 1 - Math.abs(x - width * 0.5) / (width * 0.45)) * Math.max(0, 1 - Math.abs(y - height * 0.45) / (height * 0.42));
+    const s = 0.45 + hash01(i * 4.17) * 1.9 + nearCanopy * 1.4;
+    const hue = hash01(i * 3.11) > 0.58 ? 45 : 190;
+    bgLayer.fill(hue, 38, 82, 8 + nearCanopy * 12 + hash01(i) * 8);
+    bgLayer.ellipse(x, y, s, s);
+  }
+  bgLayer.blendMode(BLEND);
+}
+
+function renderGrain() {
+  grainLayer.clear();
+  grainLayer.noStroke();
+  for (let i = 0; i < width * height / 720; i++) {
+    const x = hash01(i * 19.19 + CONFIG.seed) * width;
+    const y = hash01(i * 31.31 + 4.7) * height;
+    const hue = hash01(i * 11.1) > 0.55 ? 48 : 178;
+    grainLayer.fill(hue, 34, 90, 3 + hash01(i * 7.2) * 6);
+    grainLayer.rect(x, y, 1, 1);
+  }
+}
+
+function fadeLayer(layer, alpha) {
+  layer.push();
+  layer.noStroke();
+  layer.blendMode(BLEND);
+  layer.fill(0, 0, 0, alpha);
+  layer.rect(0, 0, width, height);
+  layer.pop();
+}
+
+function drawVignette() {
+  const ctx = drawingContext;
+  const gradient = ctx.createRadialGradient(width * 0.5, height * 0.48, Math.min(width, height) * 0.16, width * 0.5, height * 0.5, Math.max(width, height) * 0.70);
+  gradient.addColorStop(0.0, 'rgba(0, 0, 0, 0)');
+  gradient.addColorStop(0.68, 'rgba(0, 0, 0, 0.08)');
+  gradient.addColorStop(1.0, 'rgba(0, 0, 0, 0.72)');
+  ctx.save();
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+  ctx.restore();
+}
+
+function endpoint(x, y, angle, len) {
+  return createVector(x + Math.cos(angle) * len, y + Math.sin(angle) * len);
+}
+
+function hash01(n) {
+  return fract(Math.sin(n * 127.1 + 311.7) * 43758.5453123);
+}
+
+function hashSigned(n) {
+  return hash01(n) * 2 - 1;
+}
+
+function fract(n) {
+  return n - Math.floor(n);
+}
+
+async function startMidiGarden() {
+  try {
+    await userStartAudio();
+    midiContext = getAudioContext();
+    buildMidiGraph();
+    if (midiMaster) {
+      midiMaster.gain.cancelScheduledValues(midiContext.currentTime);
+      midiMaster.gain.setTargetAtTime(0.38, midiContext.currentTime, 0.025);
+    }
+    midiMode = true;
+    demoMode = false;
+    audioStarted = false;
+    if (mic) {
+      try { mic.stop(); } catch (err) {}
+    }
+    midiStartedAt = midiContext.currentTime;
+    midiStep = 0;
+    activeMidiNotes = [];
+    midiVisual = {
+      bass: 0,
+      lowMid: 0,
+      mid: 0,
+      highMid: 0,
+      treble: 0,
+      level: 0,
+      hue: 45,
+      noteCount: 0,
+      bassHit: 0,
+      chordGlow: 0,
+      leadSpark: 0,
+      pan: 0,
+      pitch: 0.5
+    };
+    statusEl.textContent = 'MIDI garden';
+    triggerMidiStep(0, midiContext.currentTime);
+  } catch (err) {
+    statusEl.textContent = 'Audio unavailable';
+    demoMode = true;
+    midiMode = false;
+  }
+}
+
+function buildMidiGraph() {
+  if (midiMaster) return;
+
+  midiMaster = midiContext.createGain();
+  midiMaster.gain.value = 0.38;
+
+  midiFilter = midiContext.createBiquadFilter();
+  midiFilter.type = 'lowpass';
+  midiFilter.frequency.value = 5200;
+  midiFilter.Q.value = 0.5;
+
+  const compressor = midiContext.createDynamicsCompressor();
+  compressor.threshold.value = -18;
+  compressor.knee.value = 24;
+  compressor.ratio.value = 5;
+  compressor.attack.value = 0.012;
+  compressor.release.value = 0.18;
+
+  midiDelay = midiContext.createDelay(0.75);
+  midiDelay.delayTime.value = 0.29;
+  const feedback = midiContext.createGain();
+  feedback.gain.value = 0.24;
+  const delayGain = midiContext.createGain();
+  delayGain.gain.value = 0.18;
+
+  midiMaster.connect(midiFilter);
+  midiMaster.connect(midiDelay);
+  midiDelay.connect(feedback);
+  feedback.connect(midiDelay);
+  midiDelay.connect(delayGain);
+  delayGain.connect(midiFilter);
+  midiFilter.connect(compressor);
+  compressor.connect(midiContext.destination);
+}
+
+function updateMidiSynth() {
+  if (!midiContext || !midiMode) return;
+  const stepDuration = 60 / CONFIG.bpm / 2;
+  const elapsed = Math.max(0, midiContext.currentTime - midiStartedAt);
+  const currentStep = Math.floor(elapsed / stepDuration);
+  if (currentStep !== midiStep) {
+    midiStep = currentStep;
+    triggerMidiStep(currentStep, midiContext.currentTime);
+  }
+}
+
+function triggerMidiStep(stepIndex, now) {
+  const step = MIDI_PATTERN[((stepIndex % MIDI_PATTERN.length) + MIDI_PATTERN.length) % MIDI_PATTERN.length];
+  const phase = stepIndex / MIDI_PATTERN.length;
+  midiHue = (38 + (step.lead || step.bass || 60) * 2.7 + phase * 24) % 360;
+
+  if (step.bass !== null) {
+    playSynthNote(step.bass, now, 0.42, 0.18 * step.vel, 'triangle', -0.18, 0.42, 'bass', step.vel);
+  }
+
+  if (step.chord) {
+    for (let i = 0; i < step.chord.length; i++) {
+      playSynthNote(step.chord[i], now + i * 0.018, 0.70, 0.055 * step.vel, i % 2 ? 'sine' : 'triangle', -0.34 + i * 0.34, 0.62, 'chord', step.vel * 0.82);
+    }
+  }
+
+  if (step.lead) {
+    playSynthNote(step.lead, now + 0.035, 0.24, 0.052 * step.vel, 'sine', hashSigned(stepIndex + 1.7) * 0.42, 0.92, 'lead', step.vel);
+    if (stepIndex % 4 === 3 || step.lead >= 91) {
+      playSynthNote(step.lead + 12, now + 0.08, 0.18, 0.027 * step.vel, 'sine', 0.46, 1, 'spark', step.vel * 0.78);
+    }
+  }
+}
+
+function playSynthNote(note, startAt, duration, gainValue, type, pan, brightness, role, visualVelocity) {
+  const osc = midiContext.createOscillator();
+  const gain = midiContext.createGain();
+  const panner = typeof midiContext.createStereoPanner === 'function' ? midiContext.createStereoPanner() : null;
+  const filter = midiContext.createBiquadFilter();
+  registerMidiVisualNote(note, startAt, duration, role, visualVelocity, pan, brightness);
+
+  osc.type = type;
+  osc.frequency.setValueAtTime(midiToFrequency(note), startAt);
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(900 + brightness * 5200, startAt);
+  filter.Q.value = 0.7 + brightness * 1.4;
+
+  gain.gain.setValueAtTime(0.0001, startAt);
+  gain.gain.exponentialRampToValueAtTime(Math.max(0.0002, gainValue), startAt + 0.018);
+  gain.gain.exponentialRampToValueAtTime(0.0001, startAt + duration);
+
+  osc.connect(filter);
+  filter.connect(gain);
+  if (panner) {
+    panner.pan.value = pan;
+    gain.connect(panner);
+    panner.connect(midiMaster);
+  } else {
+    gain.connect(midiMaster);
+  }
+  osc.start(startAt);
+  osc.stop(startAt + duration + 0.04);
+}
+
+function registerMidiVisualNote(note, startAt, duration, role, velocity, pan, brightness) {
+  activeMidiNotes.push({
+    note,
+    startAt,
+    duration,
+    role,
+    velocity: constrain(velocity, 0, 1),
+    pan,
+    brightness,
+    hue: midiNoteHue(note, role)
+  });
+  if (activeMidiNotes.length > 96) {
+    activeMidiNotes.splice(0, activeMidiNotes.length - 96);
+  }
+}
+
+function midiNoteHue(note, role) {
+  if (role === 'bass') return (32 + note * 1.1) % 360;
+  if (role === 'chord') return (118 + note * 1.7) % 360;
+  if (role === 'spark') return (198 + note * 2.6) % 360;
+  return (292 + note * 2.2) % 360;
+}
+
+function quietMidiSynth() {
+  if (!midiContext || !midiMaster) return;
+  midiMaster.gain.cancelScheduledValues(midiContext.currentTime);
+  midiMaster.gain.setTargetAtTime(0.0001, midiContext.currentTime, 0.03);
+}
+
+function midiToFrequency(note) {
+  return 440 * Math.pow(2, (note - 69) / 12);
+}
+
+function useDemoSignal() {
+  demoMode = true;
+  audioStarted = false;
+  midiMode = false;
+  activeMidiNotes = [];
+  quietMidiSynth();
+  if (mic) {
+    try { mic.stop(); } catch (err) {}
+  }
+  statusEl.textContent = 'Demo signal';
+}
+
+async function startMic() {
+  try {
+    await userStartAudio();
+    midiMode = false;
+    activeMidiNotes = [];
+    quietMidiSynth();
+    mic = new p5.AudioIn();
+    mic.start(() => {
+      fft = new p5.FFT(0.82, 1024);
+      fft.setInput(mic);
+      audioStarted = true;
+      demoMode = false;
+      statusEl.textContent = 'Microphone live';
+    }, () => {
+      statusEl.textContent = 'Mic unavailable';
+      demoMode = true;
+    });
+  } catch (err) {
+    statusEl.textContent = 'Mic unavailable';
+    demoMode = true;
+  }
+}
+
+function keyPressed() {
+  if (key === 's' || key === 'S') saveCanvas('music-life-tree', 'png');
+  if (key === 'g' || key === 'G') saveGif('music-life-tree', 5);
+  if (key === 'f' || key === 'F') saveFrames('life-tree-frame', 'png', 5, CONFIG.fps);
+  if (key === ' ') paused = !paused;
+  if (key === 'r' || key === 'R') {
+    CONFIG.seed = Math.floor(random(1000000));
+    randomSeed(CONFIG.seed);
+    noiseSeed(CONFIG.seed);
+    particles = [];
+    buildLayers();
+  }
+}
+
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+  buildLayers();
+}
+</script>
+</body>
+</html>
