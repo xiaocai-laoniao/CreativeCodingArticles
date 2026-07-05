@@ -1,0 +1,1108 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>p5.js 黏菌模拟：荧光菌丝星图</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.11.3/p5.min.js"></script>
+<script>p5.disableFriendlyErrors = true;</script>
+<style>
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    overflow: hidden;
+    background: #010604;
+  }
+  canvas {
+    display: block;
+  }
+</style>
+</head>
+<body>
+<script>
+const CONFIG = {
+  seed: 907331,
+  fps: 30,
+  loopFrames: 300,
+  hubCount: 25,
+  mainBranchCount: 34,
+  branchDepth: 5,
+  satelliteBranches: 460,
+  capillarySeeds: 1800,
+  sporeCount: 22000,
+  pulseCount: 115,
+  bloomEveryFrames: 3,
+  maxFilaments: 6200,
+  maxCapillaries: 5200,
+  fieldScale: 3.0,
+  agentDensity: 0.16,
+  minAgents: 18000,
+  maxAgents: 38000,
+  warmupSteps: 86,
+  stepsPerFrame: 1,
+  sensorDistance: 7.6,
+  sensorAngle: 0.70,
+  turnAngle: 0.34,
+  stepSize: 0.98,
+  deposit: 0.13,
+  decay: 0.946,
+  diffuseMix: 0.12,
+  nutrientSense: 1.55,
+  maxTrail: 2.45,
+  mouseFoodRadius: 18,
+  mouseFoodStrength: 1.65
+};
+
+const PALETTE = {
+  bg0: '#010604',
+  bg1: '#03120a',
+  green: [92, 100, 92],
+  lime: [76, 95, 100],
+  acid: [64, 92, 100],
+  cyan: [176, 86, 94],
+  teal: [155, 78, 88],
+  gold: [52, 86, 100]
+};
+
+let bgLayer;
+let hazeLayer;
+let veinLayer;
+let fineLayer;
+let sporeLayer;
+let liveLayer;
+let hubs = [];
+let edges = [];
+let branchAnchors = [];
+let twinkleSpores = [];
+let pulses = [];
+let rng;
+let paused = false;
+let lastBloomFrame = -999;
+let filamentCount = 0;
+let capillaryCount = 0;
+let fieldW = 0;
+let fieldH = 0;
+let fieldCount = 0;
+let agentCount = 0;
+let foragers;
+let trails = [];
+let scratch = [];
+let nutrientField;
+let trailLayer;
+let trailImage;
+let foragerTick = 0;
+
+function setup() {
+  pixelDensity(1);
+  createCanvas(windowWidth, windowHeight);
+  frameRate(CONFIG.fps);
+  colorMode(HSB, 360, 100, 100, 100);
+  resetScene();
+}
+
+function resetScene() {
+  randomSeed(CONFIG.seed);
+  noiseSeed(CONFIG.seed);
+  rng = mulberry32(CONFIG.seed);
+  hubs = [];
+  edges = [];
+  branchAnchors = [];
+  twinkleSpores = [];
+  pulses = [];
+  filamentCount = 0;
+  capillaryCount = 0;
+
+  bgLayer = createGraphics(width, height);
+  hazeLayer = createGraphics(width, height);
+  veinLayer = createGraphics(width, height);
+  fineLayer = createGraphics(width, height);
+  sporeLayer = createGraphics(width, height);
+  liveLayer = createGraphics(width, height);
+  for (const layer of [bgLayer, hazeLayer, veinLayer, fineLayer, sporeLayer, liveLayer]) {
+    layer.pixelDensity(1);
+    layer.colorMode(HSB, 360, 100, 100, 100);
+    layer.clear();
+  }
+
+  buildHubs();
+  buildEdges();
+  setupChemotaxisField();
+  renderBackground();
+  renderSporeClouds();
+  renderMyceliumNetwork();
+  seedPulses();
+}
+
+function draw() {
+  const t = ((frameCount - 1) % CONFIG.loopFrames) / CONFIG.loopFrames;
+  if (!paused) {
+    if (mouseIsPressed && frameCount - lastBloomFrame >= CONFIG.bloomEveryFrames) {
+      seedBloom(mouseX, mouseY, 1.0);
+      paintFoodField(mouseX, mouseY, CONFIG.mouseFoodRadius, CONFIG.mouseFoodStrength);
+      lastBloomFrame = frameCount;
+    }
+    for (let i = 0; i < CONFIG.stepsPerFrame; i++) simulateForagers();
+  }
+
+  blendMode(BLEND);
+  image(bgLayer, 0, 0);
+  image(hazeLayer, 0, 0);
+  image(sporeLayer, 0, 0);
+  image(fineLayer, 0, 0);
+
+  blendMode(ADD);
+  image(veinLayer, 0, 0);
+  drawTrailField();
+  image(liveLayer, 0, 0);
+
+  drawFlowPulses(t);
+  drawForagerSparkles(t);
+  drawTwinkleSpores(t);
+  drawMouseField(t);
+  fadeLiveLayer();
+
+  blendMode(BLEND);
+  drawVignette();
+
+  if (paused) noLoop();
+}
+
+function buildHubs() {
+  const templates = [
+    [0.50, 0.46, 1.95], [0.52, 0.61, 1.70], [0.40, 0.48, 1.18],
+    [0.36, 0.31, 1.05], [0.61, 0.30, 1.10], [0.68, 0.43, 1.08],
+    [0.30, 0.63, 0.95], [0.42, 0.73, 1.12], [0.61, 0.76, 0.92],
+    [0.73, 0.68, 1.06], [0.77, 0.28, 0.82], [0.21, 0.42, 0.82],
+    [0.17, 0.72, 0.78], [0.83, 0.57, 0.76], [0.47, 0.19, 0.74],
+    [0.55, 0.18, 0.68], [0.25, 0.22, 0.72], [0.30, 0.84, 0.72],
+    [0.56, 0.88, 0.66], [0.87, 0.78, 0.66]
+  ];
+  for (let i = 0; i < templates.length; i++) {
+    const tpl = templates[i];
+    const jitter = Math.min(width, height) * 0.018;
+    hubs.push({
+      x: tpl[0] * width + randSigned() * jitter,
+      y: tpl[1] * height + randSigned() * jitter,
+      power: tpl[2],
+      hue: i % 5 === 0 ? PALETTE.cyan[0] : i % 3 === 0 ? PALETTE.acid[0] : PALETTE.lime[0],
+      phase: rng()
+    });
+  }
+
+  while (hubs.length < CONFIG.hubCount) {
+    const angle = rng() * TWO_PI;
+    const rad = Math.pow(rng(), 0.58);
+    hubs.push({
+      x: width * (0.5 + Math.cos(angle) * rad * 0.44) + randSigned() * width * 0.018,
+      y: height * (0.52 + Math.sin(angle) * rad * 0.36) + randSigned() * height * 0.018,
+      power: 0.45 + rng() * 0.46,
+      hue: rng() < 0.28 ? PALETTE.cyan[0] : PALETTE.green[0] + rng() * 18,
+      phase: rng()
+    });
+  }
+}
+
+function buildEdges() {
+  const fixed = [
+    [0, 1], [0, 2], [0, 3], [0, 4], [0, 5], [1, 6], [1, 7], [1, 8],
+    [1, 9], [2, 3], [2, 6], [3, 16], [3, 14], [4, 15], [4, 10],
+    [5, 10], [5, 13], [6, 12], [7, 17], [8, 18], [9, 13], [9, 19],
+    [6, 7], [7, 8], [8, 9], [3, 4], [4, 5], [10, 13], [11, 2],
+    [11, 12], [12, 17], [13, 19], [14, 15], [16, 11]
+  ];
+
+  for (const pair of fixed) {
+    if (pair[0] < hubs.length && pair[1] < hubs.length) {
+      edges.push(makeEdge(hubs[pair[0]], hubs[pair[1]], 0.55 + rng() * 0.85));
+    }
+  }
+
+  for (let i = 0; i < hubs.length; i++) {
+    const nearest = hubs
+      .map((h, idx) => ({ idx, d: distSq(hubs[i].x, hubs[i].y, h.x, h.y) }))
+      .filter((v) => v.idx !== i)
+      .sort((a, b) => a.d - b.d)
+      .slice(0, 3);
+    for (const n of nearest) {
+      if (rng() < 0.38) edges.push(makeEdge(hubs[i], hubs[n.idx], 0.32 + rng() * 0.6));
+    }
+  }
+}
+
+function makeEdge(a, b, strength) {
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len = Math.sqrt(dx * dx + dy * dy);
+  const nx = -dy / Math.max(1, len);
+  const ny = dx / Math.max(1, len);
+  const bend = randSigned() * Math.min(width, height) * (0.018 + rng() * 0.055);
+  const wobble = 0.018 + rng() * 0.035;
+  const points = [];
+  const steps = Math.max(22, Math.floor(len / 18));
+  for (let i = 0; i <= steps; i++) {
+    const u = i / steps;
+    const ease = 0.5 - Math.cos(Math.PI * u) * 0.5;
+    const wave = Math.sin(Math.PI * u) * bend + Math.sin(TWO_PI * (u * 2 + rng())) * len * wobble * Math.sin(Math.PI * u);
+    const x = lerp(a.x, b.x, ease) + nx * wave + randSigned() * 1.2;
+    const y = lerp(a.y, b.y, ease) + ny * wave + randSigned() * 1.2;
+    points.push({ x, y });
+  }
+  return { a, b, points, strength, phase: rng(), hue: lerp(a.hue, b.hue, 0.5) };
+}
+
+function renderBackground() {
+  const ctx = bgLayer.drawingContext;
+  const g = ctx.createRadialGradient(width * 0.50, height * 0.47, Math.min(width, height) * 0.05, width * 0.50, height * 0.50, Math.max(width, height) * 0.72);
+  g.addColorStop(0.0, '#102807');
+  g.addColorStop(0.30, '#06180a');
+  g.addColorStop(0.65, '#020903');
+  g.addColorStop(1.0, '#000000');
+  ctx.save();
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, width, height);
+  ctx.restore();
+
+  bgLayer.noFill();
+  randomSeed(CONFIG.seed + 3);
+  for (let i = 0; i < Math.floor(width * height / 170); i++) {
+    const x = random(width);
+    const y = random(height);
+    const h = random([82, 100, 160, 178]);
+    bgLayer.stroke(h, random(30, 72), random(20, 70), random(2, 9));
+    bgLayer.strokeWeight(random(0.25, 1.2));
+    bgLayer.point(x, y);
+  }
+
+  hazeLayer.blendMode(ADD);
+  for (const h of hubs) {
+    const radius = Math.min(width, height) * (0.045 + h.power * 0.025);
+    drawRadialBlob(hazeLayer, h.x, h.y, radius * 2.5, h.hue, 78, 75, 7 + h.power * 4);
+  }
+}
+
+function renderSporeClouds() {
+  sporeLayer.blendMode(ADD);
+  const cloudCount = Math.floor(CONFIG.sporeCount * 0.78);
+  for (let i = 0; i < cloudCount; i++) {
+    const h = weightedHub();
+    const spread = Math.min(width, height) * (0.035 + rng() * 0.13) * (1.25 - Math.min(0.75, h.power * 0.18));
+    const angle = rng() * TWO_PI;
+    const radius = Math.pow(rng(), 0.42) * spread;
+    const x = h.x + Math.cos(angle) * radius + randNormal() * spread * 0.23;
+    const y = h.y + Math.sin(angle) * radius + randNormal() * spread * 0.18;
+    drawSpore(sporeLayer, x, y, rng() < 0.34 ? PALETTE.cyan[0] : 78 + rng() * 34, 0.35 + rng() * 1.8, 10 + rng() * 50);
+    if (i % 19 === 0) twinkleSpores.push({ x, y, size: 1.2 + rng() * 4, hue: rng() < 0.35 ? PALETTE.cyan[0] : 72 + rng() * 26, phase: rng() });
+  }
+
+  for (let i = cloudCount; i < CONFIG.sporeCount; i++) {
+    const e = edges[Math.floor(rng() * edges.length)];
+    const u = rng();
+    const p = pathPoint(e.points, u);
+    const angle = pathTangent(e.points, u) + HALF_PI;
+    const offset = randNormal() * Math.min(width, height) * 0.018;
+    const x = p.x + Math.cos(angle) * offset;
+    const y = p.y + Math.sin(angle) * offset;
+    drawSpore(sporeLayer, x, y, rng() < 0.22 ? PALETTE.cyan[0] : 76 + rng() * 30, 0.3 + rng() * 1.35, 8 + rng() * 38);
+  }
+
+  for (let i = 0; i < 95; i++) {
+    const h = weightedHub();
+    drawRingSpore(sporeLayer, h.x + randNormal() * 55, h.y + randNormal() * 45, 5 + rng() * 12, rng() < 0.5 ? PALETTE.cyan[0] : PALETTE.lime[0]);
+  }
+}
+
+function renderMyceliumNetwork() {
+  veinLayer.blendMode(ADD);
+  fineLayer.blendMode(ADD);
+
+  for (const e of edges) {
+    drawPolyline(veinLayer, e.points, e.hue, 94, 96, 3.8 + e.strength * 5.0, 8 + e.strength * 13, true);
+    drawPolyline(veinLayer, e.points, e.hue + 8, 80, 100, 0.8 + e.strength * 1.7, 30 + e.strength * 18, false);
+    drawPolyline(fineLayer, e.points, e.hue - 12, 88, 82, 0.7, 32, false);
+
+    const anchorEvery = Math.max(3, Math.floor(e.points.length / 10));
+    for (let i = anchorEvery; i < e.points.length - 2; i += anchorEvery) {
+      if (rng() < 0.88) {
+        const p = e.points[i];
+        const theta = pathTangent(e.points, i / (e.points.length - 1)) + (rng() < 0.5 ? HALF_PI : -HALF_PI) + randSigned() * 0.44;
+        branchAnchors.push({ x: p.x, y: p.y, angle: theta, energy: 0.72 + rng() * 0.78, hue: e.hue });
+      }
+    }
+  }
+
+  for (const h of hubs) {
+    drawHub(h);
+    const rays = Math.floor(14 + h.power * 18);
+    for (let i = 0; i < rays; i++) {
+      const angle = TWO_PI * (i / rays) + randSigned() * 0.34;
+      branchAnchors.push({ x: h.x, y: h.y, angle, energy: 0.92 + h.power * 0.62 + rng() * 0.55, hue: h.hue });
+    }
+  }
+
+  for (let i = 0; i < CONFIG.satelliteBranches; i++) {
+    const e = edges[Math.floor(rng() * edges.length)];
+    const u = rng();
+    const p = pathPoint(e.points, u);
+    const tangent = pathTangent(e.points, u);
+    branchAnchors.push({
+      x: p.x + randNormal() * 12,
+      y: p.y + randNormal() * 12,
+      angle: tangent + (rng() < 0.5 ? HALF_PI : -HALF_PI) + randSigned() * 0.9,
+      energy: 0.32 + rng() * 0.72,
+      hue: rng() < 0.2 ? PALETTE.cyan[0] : e.hue
+    });
+  }
+
+  for (const a of branchAnchors) {
+    growBranch(a.x, a.y, a.angle, Math.min(width, height) * (0.055 + 0.04 * a.energy), CONFIG.branchDepth, 1.0 + a.energy * 0.7, a.hue);
+  }
+
+  renderCapillaryMesh();
+  renderMainVesselOverlay();
+}
+
+function growBranch(x, y, angle, length, depth, weight, hue) {
+  if (filamentCount >= CONFIG.maxFilaments) return;
+  if (depth <= 0 || length < 8 || x < -30 || y < -30 || x > width + 30 || y > height + 30) return;
+  filamentCount++;
+  const points = [];
+  let px = x;
+  let py = y;
+  let a = angle;
+  const steps = Math.max(5, Math.floor(length / 10));
+  points.push({ x: px, y: py });
+  for (let i = 1; i <= steps; i++) {
+    const n = noise(px * 0.0028, py * 0.0028, depth * 11.7 + CONFIG.seed * 0.0001);
+    a += (n - 0.5) * (0.78 - depth * 0.08) + randSigned() * 0.12;
+    const step = length / steps * (0.82 + rng() * 0.28);
+    px += Math.cos(a) * step;
+    py += Math.sin(a) * step;
+    points.push({ x: px, y: py });
+
+    if (depth > 1 && i > 1 && rng() < 0.22 + depth * 0.065) {
+      const fork = a + (rng() < 0.5 ? -1 : 1) * (0.42 + rng() * 0.72);
+      growBranch(px, py, fork, length * (0.40 + rng() * 0.30), depth - 1, weight * (0.48 + rng() * 0.12), hue + randSigned() * 12);
+    }
+  }
+
+  drawPolyline(fineLayer, points, hue, 92, 92, Math.max(0.28, weight), 18 + depth * 9, false);
+  if (depth >= 3) {
+    drawPolyline(veinLayer, points, hue + 5, 95, 100, Math.max(0.45, weight * 1.25), 5 + depth * 3, true);
+  }
+
+  if (rng() < 0.62) {
+    const tip = points[points.length - 1];
+    drawSpore(sporeLayer, tip.x, tip.y, hue + rng() * 25, 0.9 + rng() * 2.8, 18 + rng() * 45);
+  }
+}
+
+function renderCapillaryMesh() {
+  const areaScale = constrain((width * height) / (1800 * 1000), 0.62, 1.35);
+  const count = Math.floor(CONFIG.capillarySeeds * areaScale);
+
+  for (let i = 0; i < count && capillaryCount < CONFIG.maxCapillaries; i++) {
+    if (rng() < 0.68) {
+      const e = edges[Math.floor(rng() * edges.length)];
+      const u = rng();
+      const p = pathPoint(e.points, u);
+      const tangent = pathTangent(e.points, u);
+      const side = rng() < 0.5 ? -1 : 1;
+      const offset = randNormal() * Math.min(width, height) * 0.014;
+      traceCapillary(
+        p.x + Math.cos(tangent + HALF_PI) * offset,
+        p.y + Math.sin(tangent + HALF_PI) * offset,
+        tangent + side * (0.48 + rng() * 1.28),
+        Math.min(width, height) * (0.026 + rng() * 0.082),
+        rng() < 0.24 ? PALETTE.cyan[0] : e.hue + randSigned() * 12,
+        0,
+        0.42 + rng() * 0.58
+      );
+    } else {
+      const h = weightedHub();
+      const angle = rng() * TWO_PI;
+      const radius = Math.pow(rng(), 0.64) * Math.min(width, height) * (0.018 + h.power * 0.022);
+      traceCapillary(
+        h.x + Math.cos(angle) * radius,
+        h.y + Math.sin(angle) * radius,
+        angle + randSigned() * 0.65,
+        Math.min(width, height) * (0.035 + h.power * 0.026 + rng() * 0.065),
+        h.hue + randSigned() * 16,
+        0,
+        0.5 + h.power * 0.18 + rng() * 0.45
+      );
+    }
+  }
+}
+
+function traceCapillary(x, y, angle, length, hue, generation, energy) {
+  if (capillaryCount >= CONFIG.maxCapillaries) return;
+  if (generation > 3 || length < 10 || x < -35 || y < -35 || x > width + 35 || y > height + 35) return;
+
+  capillaryCount++;
+  const points = [];
+  const steps = Math.max(5, Math.floor(length / (4.5 + generation * 1.8)));
+  let px = x;
+  let py = y;
+  let a = angle;
+  points.push({ x: px, y: py });
+
+  for (let i = 1; i <= steps; i++) {
+    const n = noise(px * 0.0046, py * 0.0046, CONFIG.seed * 0.00017 + generation * 8.7);
+    const curl = noise(px * 0.010, py * 0.010, 91.3 + generation * 3.2) - 0.5;
+    a += (n - 0.5) * (0.42 + generation * 0.10) + curl * 0.18 + randSigned() * 0.11;
+    const step = (length / steps) * (0.72 + rng() * 0.38);
+    px += Math.cos(a) * step;
+    py += Math.sin(a) * step;
+    if (px < -45 || py < -45 || px > width + 45 || py > height + 45) break;
+    points.push({ x: px, y: py });
+
+    if (generation < 3 && i > 2 && capillaryCount < CONFIG.maxCapillaries && rng() < 0.033 - generation * 0.006) {
+      const forkSide = rng() < 0.5 ? -1 : 1;
+      traceCapillary(
+        px,
+        py,
+        a + forkSide * (0.42 + rng() * 0.86),
+        length * (0.32 + rng() * 0.38),
+        hue + randSigned() * 18,
+        generation + 1,
+        energy * (0.56 + rng() * 0.18)
+      );
+    }
+
+    if (rng() < 0.012 + generation * 0.003) {
+      drawSpore(sporeLayer, px, py, hue + randSigned() * 18, 0.32 + rng() * 1.2, 8 + rng() * 28);
+    }
+  }
+
+  if (points.length < 2) return;
+  const weight = Math.max(0.16, (0.34 + energy * 0.56) * Math.pow(0.68, generation));
+  const alpha = Math.max(5, 13 + energy * 24 - generation * 4);
+  drawPolyline(fineLayer, points, hue, 92, 96, weight, alpha, false);
+  if (generation === 0 && rng() < 0.18) {
+    drawPolyline(veinLayer, points, hue + 4, 90, 100, weight * 0.65, alpha * 0.28, true);
+  }
+}
+
+function renderMainVesselOverlay() {
+  for (const e of edges) {
+    drawPolyline(veinLayer, e.points, e.hue + 2, 92, 96, 3.2 + e.strength * 4.4, 13 + e.strength * 15, true);
+    drawPolyline(veinLayer, e.points, 76, 86, 100, 0.9 + e.strength * 1.35, 36 + e.strength * 20, false);
+  }
+  for (const h of hubs) drawHub(h);
+}
+
+function drawHub(h) {
+  const r = Math.min(width, height) * (0.006 + h.power * 0.006);
+  drawRadialBlob(veinLayer, h.x, h.y, r * 7.5, h.hue, 96, 100, 40);
+  drawRadialBlob(veinLayer, h.x, h.y, r * 3.3, h.hue + 18, 85, 100, 58);
+  veinLayer.noFill();
+  veinLayer.stroke(h.hue + 4, 88, 100, 54);
+  veinLayer.strokeWeight(1.2);
+  veinLayer.ellipse(h.x, h.y, r * 4.6, r * 4.6);
+  veinLayer.noStroke();
+  veinLayer.fill(66, 42, 100, 86);
+  veinLayer.ellipse(h.x, h.y, r * 1.45, r * 1.45);
+}
+
+function seedPulses() {
+  for (let i = 0; i < CONFIG.pulseCount; i++) {
+    const e = edges[Math.floor(rng() * edges.length)];
+    pulses.push({
+      edge: e,
+      phase: rng(),
+      speed: 0.12 + rng() * 0.46,
+      size: 1.2 + rng() * 4.5,
+      hue: rng() < 0.24 ? PALETTE.cyan[0] : 66 + rng() * 28
+    });
+  }
+}
+
+function setupChemotaxisField() {
+  fieldW = Math.max(280, Math.floor(width / CONFIG.fieldScale));
+  fieldH = Math.max(180, Math.floor(height / CONFIG.fieldScale));
+  fieldCount = fieldW * fieldH;
+  agentCount = Math.max(CONFIG.minAgents, Math.min(CONFIG.maxAgents, Math.floor(fieldCount * CONFIG.agentDensity)));
+  foragerTick = 0;
+
+  trails = [
+    new Float32Array(fieldCount),
+    new Float32Array(fieldCount),
+    new Float32Array(fieldCount)
+  ];
+  scratch = [
+    new Float32Array(fieldCount),
+    new Float32Array(fieldCount),
+    new Float32Array(fieldCount)
+  ];
+  nutrientField = new Float32Array(fieldCount);
+  trailLayer = createGraphics(fieldW, fieldH);
+  trailLayer.pixelDensity(1);
+  trailLayer.colorMode(RGB, 255, 255, 255, 255);
+  trailImage = trailLayer.drawingContext.createImageData(fieldW, fieldH);
+
+  buildNutrientField();
+  buildForagers();
+  for (let i = 0; i < CONFIG.warmupSteps; i++) simulateForagers();
+}
+
+function buildNutrientField() {
+  const unit = Math.min(fieldW, fieldH);
+
+  for (const h of hubs) {
+    paintFieldSpot(
+      screenToFieldX(h.x),
+      screenToFieldY(h.y),
+      unit * (0.018 + h.power * 0.012),
+      1.0 + h.power * 0.65,
+      -1
+    );
+  }
+
+  for (const e of edges) {
+    for (let i = 0; i < e.points.length; i += 2) {
+      const p = e.points[i];
+      paintFieldSpot(
+        screenToFieldX(p.x),
+        screenToFieldY(p.y),
+        unit * (0.0045 + e.strength * 0.0025),
+        0.12 + e.strength * 0.06,
+        -1
+      );
+    }
+  }
+
+  for (let y = 1; y < fieldH - 1; y++) {
+    const row = y * fieldW;
+    for (let x = 1; x < fieldW - 1; x++) {
+      const idx = row + x;
+      const spores = Math.pow(noise(x * 0.029, y * 0.029, CONFIG.seed * 0.0003), 3.2) * 0.20;
+      nutrientField[idx] = (nutrientField[idx] + spores) * fieldEdgeMask(x, y);
+      trails[idx % 3][idx] = nutrientField[idx] * 0.050;
+    }
+  }
+}
+
+function buildForagers() {
+  foragers = {
+    x: new Float32Array(agentCount),
+    y: new Float32Array(agentCount),
+    angle: new Float32Array(agentCount),
+    speed: new Float32Array(agentCount),
+    drift: new Float32Array(agentCount),
+    family: new Uint8Array(agentCount)
+  };
+
+  for (let i = 0; i < agentCount; i++) {
+    const src = hubs[Math.floor(rng() * hubs.length)];
+    const dst = weightedHub();
+    const sx = screenToFieldX(src.x);
+    const sy = screenToFieldY(src.y);
+    const dx = screenToFieldX(dst.x);
+    const dy = screenToFieldY(dst.y);
+    const spread = Math.min(fieldW, fieldH) * (0.010 + src.power * 0.010 + rng() * 0.025);
+    const x = clampField(sx + randNormal() * spread, fieldW);
+    const y = clampField(sy + randNormal() * spread, fieldH);
+
+    foragers.x[i] = x;
+    foragers.y[i] = y;
+    foragers.angle[i] = Math.atan2(dy - y, dx - x) + randSigned() * 1.2;
+    foragers.speed[i] = 0.72 + rng() * 0.78;
+    foragers.drift[i] = rng() * 1000;
+    foragers.family[i] = i % 3;
+  }
+}
+
+function simulateForagers() {
+  if (!foragers) return;
+  const centerX = fieldW * 0.5;
+  const centerY = fieldH * 0.5;
+  const margin = Math.min(fieldW, fieldH) * 0.024;
+
+  for (let i = 0; i < agentCount; i++) {
+    const x = foragers.x[i];
+    const y = foragers.y[i];
+    let angle = foragers.angle[i];
+    const family = foragers.family[i];
+    const speed = foragers.speed[i];
+    const sensorDistance = CONFIG.sensorDistance * (0.86 + family * 0.10);
+    const sensorAngle = CONFIG.sensorAngle + family * 0.05;
+
+    const front = sampleChemicalField(x + Math.cos(angle) * sensorDistance, y + Math.sin(angle) * sensorDistance);
+    const left = sampleChemicalField(x + Math.cos(angle - sensorAngle) * sensorDistance, y + Math.sin(angle - sensorAngle) * sensorDistance);
+    const right = sampleChemicalField(x + Math.cos(angle + sensorAngle) * sensorDistance, y + Math.sin(angle + sensorAngle) * sensorDistance);
+
+    if (left > front && left > right) {
+      angle -= CONFIG.turnAngle * (0.82 + family * 0.08);
+    } else if (right > front && right > left) {
+      angle += CONFIG.turnAngle * (0.82 + family * 0.08);
+    } else if (front < left && front < right) {
+      angle += (rng() < 0.5 ? -1 : 1) * CONFIG.turnAngle * 0.76;
+    }
+
+    const curl = noise(x * 0.014, y * 0.014, foragerTick * 0.003 + foragers.drift[i]) - 0.5;
+    angle += curl * 0.15 + randSigned() * 0.018;
+
+    let nx = x + Math.cos(angle) * speed * CONFIG.stepSize;
+    let ny = y + Math.sin(angle) * speed * CONFIG.stepSize;
+    if (nx < margin || nx > fieldW - margin || ny < margin || ny > fieldH - margin) {
+      angle = Math.atan2(centerY - y, centerX - x) + randSigned() * 0.92;
+      nx = clampField(x + Math.cos(angle) * speed * CONFIG.stepSize, fieldW);
+      ny = clampField(y + Math.sin(angle) * speed * CONFIG.stepSize, fieldH);
+    }
+
+    foragers.x[i] = nx;
+    foragers.y[i] = ny;
+    foragers.angle[i] = wrapAngle(angle);
+
+    const localFood = sampleNutrientField(nx, ny);
+    const pulse = 0.82 + 0.18 * Math.sin((foragerTick + i * 7.1) * 0.014);
+    depositForagerTrail(nx, ny, family, CONFIG.deposit * speed * pulse * (0.86 + localFood * 0.10));
+  }
+
+  diffuseForagerTrails();
+  foragerTick++;
+}
+
+function sampleChemicalField(x, y) {
+  if (x < 1 || y < 1 || x >= fieldW - 1 || y >= fieldH - 1) return 0;
+  const idx = (y | 0) * fieldW + (x | 0);
+  return trails[0][idx] + trails[1][idx] + trails[2][idx] + nutrientField[idx] * CONFIG.nutrientSense;
+}
+
+function sampleNutrientField(x, y) {
+  if (x < 1 || y < 1 || x >= fieldW - 1 || y >= fieldH - 1) return 0;
+  return nutrientField[(y | 0) * fieldW + (x | 0)];
+}
+
+function depositForagerTrail(x, y, family, amount) {
+  const ix = x | 0;
+  const iy = y | 0;
+  if (ix < 1 || iy < 1 || ix >= fieldW - 1 || iy >= fieldH - 1) return;
+  const idx = iy * fieldW + ix;
+  addForagerTrail(idx, family, amount);
+  addForagerTrail(idx - 1, family, amount * 0.36);
+  addForagerTrail(idx + 1, family, amount * 0.36);
+  addForagerTrail(idx - fieldW, family, amount * 0.36);
+  addForagerTrail(idx + fieldW, family, amount * 0.36);
+}
+
+function addForagerTrail(idx, family, amount) {
+  const primary = trails[family];
+  primary[idx] = Math.min(CONFIG.maxTrail, primary[idx] + amount);
+  const neighbor = trails[(family + 1) % 3];
+  neighbor[idx] = Math.min(CONFIG.maxTrail, neighbor[idx] + amount * 0.11);
+}
+
+function diffuseForagerTrails() {
+  const mix = CONFIG.diffuseMix;
+  const keep = 1 - mix;
+  const decay = CONFIG.decay;
+
+  for (let channel = 0; channel < 3; channel++) {
+    const src = trails[channel];
+    const dst = scratch[channel];
+    dst.fill(0);
+
+    for (let y = 1; y < fieldH - 1; y++) {
+      const row = y * fieldW;
+      for (let x = 1; x < fieldW - 1; x++) {
+        const idx = row + x;
+        const cross = src[idx - 1] + src[idx + 1] + src[idx - fieldW] + src[idx + fieldW];
+        const diag = src[idx - fieldW - 1] + src[idx - fieldW + 1] + src[idx + fieldW - 1] + src[idx + fieldW + 1];
+        const avg = (src[idx] * 4 + cross + diag * 0.5) / 10;
+        dst[idx] = (src[idx] * keep + avg * mix) * decay;
+      }
+    }
+
+    trails[channel] = dst;
+    scratch[channel] = src;
+  }
+}
+
+function drawTrailField() {
+  if (!trailLayer || !trailImage) return;
+  updateTrailImage();
+  trailLayer.drawingContext.putImageData(trailImage, 0, 0);
+
+  push();
+  drawingContext.imageSmoothingEnabled = true;
+  blendMode(ADD);
+  drawingContext.filter = 'blur(16px)';
+  tint(0, 0, 100, 28);
+  image(trailLayer, 0, 0, width, height);
+  blendMode(SCREEN);
+  drawingContext.filter = 'blur(4px)';
+  tint(0, 0, 100, 76);
+  image(trailLayer, 0, 0, width, height);
+  blendMode(ADD);
+  drawingContext.filter = 'none';
+  tint(0, 0, 100, 128);
+  image(trailLayer, 0, 0, width, height);
+  noTint();
+  drawingContext.filter = 'none';
+  pop();
+}
+
+function updateTrailImage() {
+  const data = trailImage.data;
+  for (let i = 0, p = 0; i < fieldCount; i++, p += 4) {
+    const a = trails[0][i];
+    const b = trails[1][i];
+    const c = trails[2][i];
+    const total = a + b + c;
+    const food = nutrientField[i] * 0.040;
+    const visible = total * 0.26 + food;
+
+    if (visible < 0.010) {
+      data[p] = 0;
+      data[p + 1] = 0;
+      data[p + 2] = 0;
+      data[p + 3] = 0;
+      continue;
+    }
+
+    const inv = 1 / Math.max(total, 0.0001);
+    const cyan = a * inv;
+    const lime = b * inv;
+    const gold = c * inv;
+    const glow = Math.pow(Math.min(1, visible * 0.62), 0.62);
+    const hot = Math.min(1, total * 0.10 + food * 0.42);
+
+    let r = 18 * cyan + 122 * lime + 255 * gold;
+    let g = 250 * cyan + 255 * lime + 245 * gold;
+    let bl = 230 * cyan + 18 * lime + 42 * gold;
+
+    r = r * (0.26 + glow * 0.64) + 255 * hot * 0.10;
+    g = g * (0.28 + glow * 0.62) + 255 * hot * 0.09;
+    bl = bl * (0.32 + glow * 0.58) + 130 * hot * 0.08;
+
+    data[p] = Math.min(255, r);
+    data[p + 1] = Math.min(255, g);
+    data[p + 2] = Math.min(255, bl);
+    data[p + 3] = Math.min(198, 8 + glow * 176);
+  }
+}
+
+function drawForagerSparkles(t) {
+  if (!foragers) return;
+  push();
+  blendMode(ADD);
+  strokeWeight(Math.max(0.65, Math.min(width, height) / 1500));
+  const colors = [
+    [176, 62, 100, 42],
+    [82, 82, 100, 34],
+    [54, 84, 100, 30]
+  ];
+  for (let family = 0; family < 3; family++) {
+    const c = colors[family];
+    stroke(c[0], c[1], c[2], c[3]);
+    beginShape(POINTS);
+    for (let i = family; i < agentCount; i += 19) {
+      if (((i + foragerTick) % 7) === 0) continue;
+      vertex(fieldToScreenX(foragers.x[i]), fieldToScreenY(foragers.y[i]));
+    }
+    endShape();
+  }
+  pop();
+}
+
+function paintFoodField(mx, my, radius, strength) {
+  paintFieldSpot(screenToFieldX(mx), screenToFieldY(my), radius, strength, 1);
+}
+
+function paintFieldSpot(cx, cy, radius, strength, family) {
+  const rr = Math.max(1, radius * radius);
+  const minX = Math.max(1, Math.floor(cx - radius));
+  const maxX = Math.min(fieldW - 2, Math.ceil(cx + radius));
+  const minY = Math.max(1, Math.floor(cy - radius));
+  const maxY = Math.min(fieldH - 2, Math.ceil(cy + radius));
+
+  for (let y = minY; y <= maxY; y++) {
+    const row = y * fieldW;
+    for (let x = minX; x <= maxX; x++) {
+      const dx = x - cx;
+      const dy = y - cy;
+      const d2 = dx * dx + dy * dy;
+      if (d2 > rr) continue;
+      const falloff = Math.exp(-d2 / (rr * 0.42));
+      const idx = row + x;
+      nutrientField[idx] = Math.min(4.8, nutrientField[idx] + strength * falloff);
+      if (family >= 0 && trails[family]) {
+        trails[family][idx] = Math.min(CONFIG.maxTrail, trails[family][idx] + strength * 0.18 * falloff);
+      }
+    }
+  }
+}
+
+function drawFlowPulses(t) {
+  noStroke();
+  for (const p of pulses) {
+    const u = frac01(p.phase + t * p.speed);
+    const pos = pathPoint(p.edge.points, u);
+    const glow = 0.62 + 0.38 * Math.sin(TWO_PI * frac01(t + p.phase));
+    fill(p.hue, 86, 100, 18 * glow);
+    ellipse(pos.x, pos.y, p.size * 7, p.size * 7);
+    fill(p.hue + 8, 56, 100, 76 * glow);
+    ellipse(pos.x, pos.y, p.size, p.size);
+  }
+}
+
+function drawTwinkleSpores(t) {
+  noStroke();
+  for (let i = 0; i < twinkleSpores.length; i++) {
+    const s = twinkleSpores[i];
+    const flicker = Math.pow(0.5 + 0.5 * Math.sin(TWO_PI * (t * (1 + (i % 5) * 0.2) + s.phase)), 4);
+    if (flicker < 0.12) continue;
+    fill(s.hue, 86, 100, 8 + flicker * 52);
+    ellipse(s.x, s.y, s.size * (1.8 + flicker * 2.2), s.size * (1.8 + flicker * 2.2));
+    fill(s.hue + 10, 54, 100, 42 + flicker * 45);
+    ellipse(s.x, s.y, s.size, s.size);
+  }
+}
+
+function drawMouseField(t) {
+  if (!mouseIsPressed) return;
+  noFill();
+  stroke(176, 72, 100, 22 + 20 * Math.sin(TWO_PI * t));
+  strokeWeight(1);
+  const r = 22 + 10 * Math.sin(TWO_PI * t);
+  ellipse(mouseX, mouseY, r * 2.4, r * 2.4);
+}
+
+function seedBloom(x, y, force) {
+  liveLayer.blendMode(ADD);
+  const count = Math.floor(8 + 10 * force);
+  drawRadialBlob(liveLayer, x, y, 56 * force, PALETTE.cyan[0], 72, 100, 22);
+  for (let i = 0; i < count; i++) {
+    const angle = rng() * TWO_PI;
+    const len = Math.min(width, height) * (0.035 + rng() * 0.07) * force;
+    growLiveBranch(x, y, angle, len, 3, 1.6, rng() < 0.5 ? PALETTE.cyan[0] : PALETTE.lime[0]);
+  }
+  for (let i = 0; i < 80 * force; i++) {
+    const a = rng() * TWO_PI;
+    const r = Math.pow(rng(), 0.38) * 70 * force;
+    drawSpore(liveLayer, x + Math.cos(a) * r, y + Math.sin(a) * r, rng() < 0.45 ? PALETTE.cyan[0] : PALETTE.acid[0], 0.6 + rng() * 2.2, 25 + rng() * 45);
+  }
+}
+
+function growLiveBranch(x, y, angle, length, depth, weight, hue) {
+  if (depth <= 0 || length < 5) return;
+  const points = [];
+  let px = x;
+  let py = y;
+  let a = angle;
+  const steps = Math.max(4, Math.floor(length / 8));
+  points.push({ x: px, y: py });
+  for (let i = 0; i < steps; i++) {
+    a += randSigned() * 0.32;
+    px += Math.cos(a) * length / steps;
+    py += Math.sin(a) * length / steps;
+    points.push({ x: px, y: py });
+  }
+  drawPolyline(liveLayer, points, hue, 92, 100, weight, 38, false);
+  if (rng() < 0.9) growLiveBranch(px, py, a + randSigned() * 0.9, length * 0.55, depth - 1, weight * 0.6, hue + randSigned() * 16);
+  if (rng() < 0.55) growLiveBranch(px, py, a - randSigned() * 1.0, length * 0.48, depth - 1, weight * 0.5, hue + randSigned() * 16);
+}
+
+function fadeLiveLayer() {
+  liveLayer.push();
+  liveLayer.blendMode(BLEND);
+  liveLayer.noStroke();
+  liveLayer.fill(0, 0, 0, 2.4);
+  liveLayer.rect(0, 0, width, height);
+  liveLayer.pop();
+}
+
+function drawPolyline(layer, points, hue, sat, bri, weight, alpha, glow) {
+  if (points.length < 2) return;
+  layer.noFill();
+  if (glow) {
+    const ctx = layer.drawingContext;
+    ctx.save();
+    ctx.shadowColor = `hsla(${hue}, 100%, 55%, 0.52)`;
+    ctx.shadowBlur = Math.max(4, weight * 4);
+    layer.stroke(hue, sat, bri, alpha * 0.42);
+    layer.strokeWeight(weight * 2.5);
+    renderSmoothLine(layer, points);
+    ctx.restore();
+  }
+  layer.stroke(hue, sat, bri, alpha);
+  layer.strokeWeight(weight);
+  renderSmoothLine(layer, points);
+}
+
+function renderSmoothLine(layer, points) {
+  layer.beginShape();
+  layer.curveVertex(points[0].x, points[0].y);
+  for (const p of points) layer.curveVertex(p.x, p.y);
+  const last = points[points.length - 1];
+  layer.curveVertex(last.x, last.y);
+  layer.endShape();
+}
+
+function drawSpore(layer, x, y, hue, size, alpha) {
+  if (x < -20 || y < -20 || x > width + 20 || y > height + 20) return;
+  layer.noStroke();
+  layer.fill(hue, 88, 100, alpha * 0.18);
+  layer.ellipse(x, y, size * 4.2, size * 4.2);
+  layer.fill(hue, 72, 100, alpha);
+  layer.ellipse(x, y, size, size);
+}
+
+function drawRingSpore(layer, x, y, r, hue) {
+  layer.noFill();
+  layer.stroke(hue, 88, 96, 38);
+  layer.strokeWeight(1.2);
+  layer.ellipse(x, y, r * 2, r * 2);
+  layer.noStroke();
+  layer.fill(hue, 74, 100, 34);
+  layer.ellipse(x, y, r * 0.58, r * 0.58);
+}
+
+function drawRadialBlob(layer, x, y, radius, hue, sat, bri, alpha) {
+  const ctx = layer.drawingContext;
+  const g = ctx.createRadialGradient(x, y, 0, x, y, radius);
+  g.addColorStop(0.0, hsla(hue, sat, bri, alpha));
+  g.addColorStop(0.34, hsla(hue, sat, bri, alpha * 0.28));
+  g.addColorStop(1.0, hsla(hue, sat, bri, 0));
+  ctx.save();
+  ctx.fillStyle = g;
+  ctx.beginPath();
+  ctx.arc(x, y, radius, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawVignette() {
+  const ctx = drawingContext;
+  const g = ctx.createRadialGradient(width * 0.5, height * 0.5, Math.min(width, height) * 0.26, width * 0.5, height * 0.5, Math.max(width, height) * 0.70);
+  g.addColorStop(0.0, 'rgba(0,0,0,0)');
+  g.addColorStop(0.72, 'rgba(0,0,0,0.08)');
+  g.addColorStop(1.0, 'rgba(0,0,0,0.72)');
+  ctx.save();
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, width, height);
+  ctx.restore();
+}
+
+function weightedHub() {
+  const a = hubs[Math.floor(rng() * hubs.length)];
+  if (rng() < 0.58) return hubs[Math.floor(rng() * Math.min(10, hubs.length))];
+  return a;
+}
+
+function pathPoint(points, u) {
+  const pos = Math.max(0, Math.min(points.length - 1.001, u * (points.length - 1)));
+  const i = Math.floor(pos);
+  const f = pos - i;
+  const a = points[i];
+  const b = points[Math.min(points.length - 1, i + 1)];
+  return { x: lerp(a.x, b.x, f), y: lerp(a.y, b.y, f) };
+}
+
+function pathTangent(points, u) {
+  const pos = Math.max(1, Math.min(points.length - 2, Math.floor(u * (points.length - 1))));
+  const a = points[pos - 1];
+  const b = points[pos + 1];
+  return Math.atan2(b.y - a.y, b.x - a.x);
+}
+
+function distSq(ax, ay, bx, by) {
+  const dx = ax - bx;
+  const dy = ay - by;
+  return dx * dx + dy * dy;
+}
+
+function hsla(h, s, b, a) {
+  return `hsla(${h}, ${s}%, ${b * 0.55}%, ${a / 100})`;
+}
+
+function frac01(v) {
+  return v - Math.floor(v);
+}
+
+function screenToFieldX(x) {
+  return x / width * fieldW;
+}
+
+function screenToFieldY(y) {
+  return y / height * fieldH;
+}
+
+function fieldToScreenX(x) {
+  return x / fieldW * width;
+}
+
+function fieldToScreenY(y) {
+  return y / fieldH * height;
+}
+
+function clampField(v, maxValue) {
+  return Math.max(1, Math.min(maxValue - 2, v));
+}
+
+function fieldEdgeMask(x, y) {
+  const edge = Math.min(x, y, fieldW - 1 - x, fieldH - 1 - y);
+  return smoothstep(2, Math.min(fieldW, fieldH) * 0.065, edge);
+}
+
+function smoothstep(a, b, v) {
+  const t = Math.max(0, Math.min(1, (v - a) / (b - a)));
+  return t * t * (3 - 2 * t);
+}
+
+function wrapAngle(a) {
+  if (a > Math.PI) return a - Math.PI * 2;
+  if (a < -Math.PI) return a + Math.PI * 2;
+  return a;
+}
+
+function randSigned() {
+  return rng() * 2 - 1;
+}
+
+function randNormal() {
+  const u = Math.max(0.000001, rng());
+  const v = Math.max(0.000001, rng());
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(Math.PI * 2 * v);
+}
+
+function mulberry32(seed) {
+  let a = seed >>> 0;
+  return function next() {
+    a += 0x6D2B79F5;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function keyPressed() {
+  if (key === ' ') {
+    paused = !paused;
+    if (!paused) loop();
+  }
+  if (key === 's' || key === 'S') saveCanvas('dense-fluorescent-mycelium', 'png');
+  if (key === 'g' || key === 'G') saveGif('dense-fluorescent-mycelium', 6);
+  if (key === 'f' || key === 'F') saveFrames('dense-mycelium-frame', 'png', 6, CONFIG.fps);
+  if (key === 'r' || key === 'R') {
+    CONFIG.seed = (CONFIG.seed + 104729) % 1000000;
+    paused = false;
+    resetScene();
+    loop();
+  }
+}
+
+function mousePressed() {
+  seedBloom(mouseX, mouseY, 1.2);
+}
+
+function windowResized() {
+  resizeCanvas(windowWidth, windowHeight);
+  resetScene();
+}
+</script>
+</body>
+</html>
